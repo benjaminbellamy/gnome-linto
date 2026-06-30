@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>ai.linto.gnomelinto</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <name>LinTO</name>
+  <summary>Send a local audio stream to a LinTO server</summary>
+  <description>
+    <p>
+      LinTO captures a local audio input and sends it to a LinTO Studio server
+      over SRT for live transcription and translation.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Select a PipeWire audio input and watch a live level meter.</li>
+      <li>Pre-flight network checks for the adapter, local and public IP,
+        internet access, and the LinTO server reachability.</li>
+      <li>Stream over SRT with automatic reconnection if the link drops.</li>
+      <li>Live transport statistics saved per URL, with first and latest
+        streaming timestamps.</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">ai.linto.gnomelinto.desktop</launchable>
+  <developer id="com.linagora">
+    <name>Benjamin Bellamy</name>
+  </developer>
+  <url type="homepage">https://github.com/benjaminbellamy/gnome-linto</url>
+  <url type="bugtracker">https://github.com/benjaminbellamy/gnome-linto/issues</url>
+  <url type="vcs-browser">https://github.com/benjaminbellamy/gnome-linto</url>
+  <content_rating type="oars-1.1"/>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/benjaminbellamy/gnome-linto/main/data/screenshots/main.png</image>
+      <caption>Streaming a microphone to a LinTO server</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.1.0" date="2026-06-30">
+      <description>
+        <p>First release: audio capture, network checks, SRT streaming with
+          auto-reconnect, and per-URL statistics.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="LintoPreferences" parent="AdwPreferencesDialog">
+    <property name="title" translatable="yes">Preferences</property>
+    <child>
+      <object class="AdwPreferencesPage">
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title" translatable="yes">LinTO Server</property>
+            <property name="description" translatable="yes">The SRT endpoint your audio is sent to.</property>
+            <child>
+              <object class="AdwEntryRow" id="srt_url_row">
+                <property name="title" translatable="yes">SRT stream URL</property>
+                <property name="input-purpose">url</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

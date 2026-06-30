@@ -1,0 +1,16 @@
+# Build directories
+/build/
+/builddir/
+/build-dir/
+_build/
+_testbuild/
+
+# Flatpak build artifacts
+/.flatpak-builder/
+/.flatpak-build-dir/
+*.flatpak
+
+# Editor and OS files
+*~
+*.swp
+.DS_Store

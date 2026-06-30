@@ -1,0 +1,88 @@
+# Flathub submission manifest.
+#
+# This is the manifest to place at the root of a fork of
+# https://github.com/flathub/flathub when submitting LinTO. It differs from the
+# repository's development manifest only in the gnome-linto module source: it
+# builds from a tagged git commit instead of the local directory, as Flathub
+# requires.
+#
+# Before submitting, set the `tag` and `commit` of the gnome-linto module to the
+# released tag and its commit SHA (see flathub/README.md).
+app-id: ai.linto.gnomelinto
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.vala
+command: gnome-linto
+
+finish-args:
+  # Network: SRT streaming, reachability checks, public IP lookup
+  - --share=network
+  # Native PipeWire audio source
+  - --filesystem=xdg-run/pipewire-0
+  # Display and graphics
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+
+build-options:
+  append-path: /usr/lib/sdk/vala/bin
+  prepend-ld-library-path: /usr/lib/sdk/vala/lib
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /man
+  - /share/doc
+  - /share/gtk-doc
+  - /share/vala
+  - '*.la'
+  - '*.a'
+
+modules:
+  # SRT transport library (srtsink is not in the GNOME runtime).
+  - name: libsrt
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_APPS=OFF
+      - -DENABLE_SHARED=ON
+      - -DENABLE_STATIC=OFF
+      - -DENABLE_ENCRYPTION=ON
+      - -DUSE_ENCLIB=openssl
+    sources:
+      - type: archive
+        url: https://github.com/Haivision/srt/archive/refs/tags/v1.5.5.tar.gz
+        sha256: c3518bc43a71b5289032395b2db4c3e09e73d78b54247d56c14553a503b491cf
+    cleanup:
+      - /bin
+
+  # Build only the GStreamer SRT plugin against the bundled libsrt, matching
+  # the runtime GStreamer version.
+  - name: gst-plugins-bad-srt
+    buildsystem: meson
+    config-opts:
+      - --libdir=lib
+      - --auto-features=disabled
+      - -Dsrt=enabled
+      - -Dintrospection=disabled
+      - -Ddoc=disabled
+      - -Dtests=disabled
+      - -Dexamples=disabled
+      - -Dnls=disabled
+      - -Dorc=disabled
+    sources:
+      - type: archive
+        url: https://gstreamer.freedesktop.org/src/gst-plugins-bad/gst-plugins-bad-1.26.11.tar.xz
+        sha256: 110fb82795f0e569b1e27b12ab9699d35c7762e1ff4db95335d6ac8d1442af3d
+
+  - name: gnome-linto
+    buildsystem: meson
+    sources:
+      - type: git
+        url: https://github.com/benjaminbellamy/gnome-linto.git
+        tag: v0.1.0
+        # Replace with the commit SHA that the v0.1.0 tag points at.
+        commit: FILL_IN_COMMIT_SHA_OF_v0.1.0

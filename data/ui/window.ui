@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <menu id="primary_menu">
+    <section>
+      <item>
+        <attribute name="label" translatable="yes">_Preferences</attribute>
+        <attribute name="action">app.preferences</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">_About LinTO</attribute>
+        <attribute name="action">app.about</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">_Quit</attribute>
+        <attribute name="action">app.quit</attribute>
+      </item>
+    </section>
+  </menu>
+  <template class="LintoWindow" parent="AdwApplicationWindow">
+    <property name="title" translatable="yes">LinTO</property>
+    <property name="default-width">600</property>
+    <property name="default-height">540</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <child type="start">
+              <object class="GtkButton" id="stream_button">
+                <property name="label" translatable="yes">Start streaming</property>
+                <property name="tooltip-text" translatable="yes">Start or pause streaming</property>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+                <signal name="clicked" handler="on_stream_clicked"/>
+              </object>
+            </child>
+            <child type="start">
+              <object class="GtkButton" id="refresh_button">
+                <property name="icon-name">view-refresh-symbolic</property>
+                <property name="tooltip-text" translatable="yes">Run checks again</property>
+                <signal name="clicked" handler="on_refresh_clicked"/>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkMenuButton">
+                <property name="primary">true</property>
+                <property name="icon-name">open-menu-symbolic</property>
+                <property name="tooltip-text" translatable="yes">Main Menu</property>
+                <property name="menu-model">primary_menu</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <property name="content">
+          <object class="AdwToastOverlay" id="toast_overlay">
+            <property name="child">
+              <object class="AdwPreferencesPage">
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <child>
+                      <object class="AdwComboRow" id="device_row">
+                        <property name="title" translatable="yes">Input device</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow" id="level_row">
+                        <property name="title" translatable="yes">Input level</property>
+                        <child type="suffix">
+                          <object class="GtkLevelBar" id="level_bar">
+                            <property name="valign">center</property>
+                            <property name="width-request">200</property>
+                            <property name="min-value">0</property>
+                            <property name="max-value">1</property>
+                            <property name="mode">continuous</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <child>
+                      <object class="AdwExpanderRow" id="network_expander">
+                        <property name="title" translatable="yes">Network</property>
+                        <property name="subtitle" translatable="yes">Checking…</property>
+                        <child>
+                          <object class="AdwActionRow" id="adapter_row">
+                            <property name="title" translatable="yes">Network adapter</property>
+                            <property name="subtitle" translatable="yes">Checking…</property>
+                            <child type="suffix">
+                              <object class="GtkImage" id="adapter_icon">
+                                <property name="icon-name">content-loading-symbolic</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="local_ip_row">
+                            <property name="title" translatable="yes">Local IP address</property>
+                            <property name="subtitle" translatable="yes">Checking…</property>
+                            <child type="suffix">
+                              <object class="GtkImage" id="local_ip_icon">
+                                <property name="icon-name">content-loading-symbolic</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="public_ip_row">
+                            <property name="title" translatable="yes">Public IP address</property>
+                            <property name="subtitle" translatable="yes">Checking…</property>
+                            <child type="suffix">
+                              <object class="GtkImage" id="public_ip_icon">
+                                <property name="icon-name">content-loading-symbolic</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="internet_row">
+                            <property name="title" translatable="yes">Internet access</property>
+                            <property name="subtitle" translatable="yes">Checking…</property>
+                            <child type="suffix">
+                              <object class="GtkImage" id="internet_icon">
+                                <property name="icon-name">content-loading-symbolic</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="website_row">
+                            <property name="title" translatable="yes">LinTO website</property>
+                            <property name="subtitle" translatable="yes">studio.linto.ai:443</property>
+                            <child type="suffix">
+                              <object class="GtkImage" id="website_icon">
+                                <property name="icon-name">content-loading-symbolic</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <child>
+                      <object class="AdwExpanderRow" id="streaming_expander">
+                        <property name="title" translatable="yes">Streaming</property>
+                        <property name="subtitle" translatable="yes">Not streaming</property>
+                        <child>
+                          <object class="AdwActionRow" id="elapsed_row">
+                            <property name="title" translatable="yes">Elapsed time</property>
+                            <property name="subtitle" translatable="yes">Not streaming</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="data_row">
+                            <property name="title" translatable="yes">Data sent</property>
+                            <property name="subtitle">0 B</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="packets_row">
+                            <property name="title" translatable="yes">Packets sent</property>
+                            <property name="subtitle">0</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="bitrate_row">
+                            <property name="title" translatable="yes">Bitrate</property>
+                            <property name="subtitle">0 kbit/s</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="first_streamed_row">
+                            <property name="title" translatable="yes">First streamed</property>
+                            <property name="subtitle" translatable="yes">Never</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="latest_streamed_row">
+                            <property name="title" translatable="yes">Latest streamed</property>
+                            <property name="subtitle" translatable="yes">Never</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>

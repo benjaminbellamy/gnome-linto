@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=LinTO
+GenericName=Audio Streamer
+Comment=Send a local audio stream to a LinTO server
+Categories=Audio;AudioVideo;GNOME;GTK;
+Keywords=audio;stream;srt;transcription;linto;
+Exec=gnome-linto
+Icon=ai.linto.gnomelinto
+Terminal=false
+Type=Application
+StartupNotify=true
