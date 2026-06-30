@@ -1,13 +1,5 @@
-# Flathub submission manifest.
-#
-# This is the manifest to place at the root of a fork of
-# https://github.com/flathub/flathub when submitting LinTO. It differs from the
-# repository's development manifest only in the gnome-linto module source: it
-# builds from a tagged git commit instead of the local directory, as Flathub
-# requires.
-#
-# Before submitting, set the `tag` and `commit` of the gnome-linto module to the
-# released tag and its commit SHA (see flathub/README.md).
+# Same as ai.linto.gnomelinto.yaml, but the gnome-linto module builds from a
+# tagged git commit instead of the local directory, as Flathub requires.
 app-id: ai.linto.gnomelinto
 runtime: org.gnome.Platform
 runtime-version: '49'
@@ -84,5 +76,4 @@ modules:
       - type: git
         url: https://github.com/benjaminbellamy/gnome-linto.git
         tag: v0.1.0
-        # Replace with the commit SHA that the v0.1.0 tag points at.
-        commit: FILL_IN_COMMIT_SHA_OF_v0.1.0
+        commit: ae52200d0378da56604f932d3c9c58f45092c9da
