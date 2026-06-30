@@ -2,23 +2,50 @@
 <interface>
   <requires lib="gtk" version="4.0"/>
   <requires lib="libadwaita" version="1.0"/>
-  <template class="LintoPreferences" parent="AdwPreferencesDialog">
-    <property name="title" translatable="yes">Preferences</property>
-    <child>
-      <object class="AdwPreferencesPage">
-        <child>
-          <object class="AdwPreferencesGroup">
-            <property name="title" translatable="yes">LinTO Server</property>
-            <property name="description" translatable="yes">The SRT endpoint your audio is sent to.</property>
-            <child>
-              <object class="AdwEntryRow" id="srt_url_row">
-                <property name="title" translatable="yes">SRT stream URL</property>
-                <property name="input-purpose">url</property>
+  <template class="LintoPreferences" parent="AdwDialog">
+    <property name="title" translatable="yes">Stream address</property>
+    <property name="content-width">760</property>
+    <property name="child">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <property name="show-start-title-buttons">false</property>
+            <property name="show-end-title-buttons">false</property>
+            <child type="start">
+              <object class="GtkButton">
+                <property name="label" translatable="yes">_Cancel</property>
+                <property name="use-underline">true</property>
+                <signal name="clicked" handler="on_cancel"/>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton">
+                <property name="label" translatable="yes">_OK</property>
+                <property name="use-underline">true</property>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+                <signal name="clicked" handler="on_save"/>
               </object>
             </child>
           </object>
         </child>
+        <property name="content">
+          <object class="AdwPreferencesPage">
+            <child>
+              <object class="AdwPreferencesGroup">
+                <child>
+                  <object class="AdwEntryRow" id="url_row">
+                    <property name="title" translatable="yes">Stream address</property>
+                    <property name="input-purpose">url</property>
+                    <signal name="entry-activated" handler="on_save"/>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
       </object>
-    </child>
+    </property>
   </template>
 </interface>

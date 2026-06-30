@@ -6,7 +6,7 @@ gnome_linto_sources = [
   'application.vala',
   'window.vala',
   'preferences.vala',
-  'srt-url.vala',
+  'stream-url.vala',
   'stats-store.vala',
   'level-meter.vala',
   'audio-monitor.vala',
@@ -37,5 +37,5 @@ executable('gnome-linto',
 )
 
 # Pure-logic sources exposed for unit testing.
-srt_url_vala = files('srt-url.vala')
+stream_url_vala = files('stream-url.vala')
 level_meter_vala = files('level-meter.vala')

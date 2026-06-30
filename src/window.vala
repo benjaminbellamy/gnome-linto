@@ -184,12 +184,13 @@ namespace Linto {
         [GtkCallback]
         private void on_stream_clicked () {
             if (this.streamer.is_active) {
-                this.streamer.stop ();
+                // Pausing ends the stream gracefully with an end of stream.
+                this.streamer.finish ();
                 return;
             }
 
             string url = this.settings.get_string ("srt-url").strip ();
-            string? url_error = SrtUrl.validate (url);
+            string? url_error = StreamUrl.validate (url);
             if (url_error != null) {
                 this.toast (url_error);
                 return;
@@ -236,10 +237,12 @@ namespace Linto {
                     this.stream_button.remove_css_class ("suggested-action");
                     this.stream_button.add_css_class ("destructive-action");
                     this.device_row.sensitive = false;
+                    string lead = protocol_lead (this.active_url);
                     if (state == StreamState.CONNECTING) {
-                        this.streaming_expander.subtitle = _("Connecting…");
+                        this.streaming_expander.subtitle = lead + _("Connecting…");
                     } else if (state == StreamState.RECONNECTING) {
-                        this.streaming_expander.subtitle = _("Reconnecting…");
+                        this.streaming_expander.subtitle =
+                            lead + _("Reconnecting…");
                     }
                     break;
                 case StreamState.IDLE:
@@ -274,8 +277,9 @@ namespace Linto {
             // Keep the collapsed summary as the connection state unless the
             // stream is actually flowing.
             if (this.streamer.state == StreamState.STREAMING) {
-                this.streaming_expander.subtitle = "%s · %.0f kbit/s".printf (
-                    elapsed_text, bitrate_kbps);
+                this.streaming_expander.subtitle =
+                    protocol_lead (this.active_url) +
+                    "%s · %.0f kbit/s".printf (elapsed_text, bitrate_kbps);
             }
 
             var entry = this.baseline;
@@ -288,6 +292,7 @@ namespace Linto {
         }
 
         private void show_stored_stats (string url) {
+            string idle_summary = protocol_lead (url) + _("Not streaming");
             var entry = this.stats_store.get (url);
             if (entry.first_unix == 0) {
                 this.elapsed_row.subtitle = "0:00:00";
@@ -296,7 +301,7 @@ namespace Linto {
                 this.bitrate_row.subtitle = "0 kbit/s";
                 this.first_streamed_row.subtitle = _("Never");
                 this.latest_streamed_row.subtitle = _("Never");
-                this.streaming_expander.subtitle = _("Not streaming");
+                this.streaming_expander.subtitle = idle_summary;
             } else {
                 this.elapsed_row.subtitle = format_duration (entry.seconds);
                 this.data_row.subtitle =
@@ -307,7 +312,20 @@ namespace Linto {
                     format_datetime (entry.first_unix);
                 this.latest_streamed_row.subtitle =
                     format_datetime (entry.latest_unix);
-                this.streaming_expander.subtitle = _("Not streaming");
+                this.streaming_expander.subtitle = idle_summary;
+            }
+        }
+
+        // Short protocol tag ("SRT · ", "RTMP · ") for the condensed
+        // Streaming summary, or empty when the URL scheme is unknown.
+        private static string protocol_lead (string url) {
+            switch (StreamUrl.protocol (url)) {
+                case StreamProtocol.SRT:
+                    return "SRT · ";
+                case StreamProtocol.RTMP:
+                    return "RTMP · ";
+                default:
+                    return "";
             }
         }
 

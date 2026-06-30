@@ -20,9 +20,9 @@
 
 namespace Linto {
     [GtkTemplate (ui = "/ai/linto/gnomelinto/ui/preferences.ui")]
-    public class Preferences : Adw.PreferencesDialog {
+    public class Preferences : Adw.Dialog {
         [GtkChild]
-        private unowned Adw.EntryRow srt_url_row;
+        private unowned Adw.EntryRow url_row;
 
         private GLib.Settings settings;
 
@@ -32,8 +32,19 @@ namespace Linto {
 
         construct {
             this.settings = new GLib.Settings (Config.APP_ID);
-            this.settings.bind ("srt-url", this.srt_url_row, "text",
-                SettingsBindFlags.DEFAULT);
+            // Edit a copy; only OK writes it back.
+            this.url_row.text = this.settings.get_string ("srt-url");
+        }
+
+        [GtkCallback]
+        private void on_cancel () {
+            this.close ();
+        }
+
+        [GtkCallback]
+        private void on_save () {
+            this.settings.set_string ("srt-url", this.url_row.text.strip ());
+            this.close ();
         }
     }
 }

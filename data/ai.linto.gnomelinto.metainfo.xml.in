@@ -35,6 +35,13 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.1" date="2026-07-01">
+      <description>
+        <p>Adds RTMP output (16 kHz mono) alongside SRT, a clean end of stream
+          on pause, per-URL statistics, and a simplified stream address
+          dialog.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-06-30">
       <description>
         <p>First release: audio capture, network checks, SRT streaming with

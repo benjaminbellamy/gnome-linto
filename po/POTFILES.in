@@ -5,7 +5,7 @@ data/ui/preferences.ui
 src/application.vala
 src/window.vala
 src/preferences.vala
-src/srt-url.vala
+src/stream-url.vala
 src/stats-store.vala
 src/level-meter.vala
 src/audio-monitor.vala

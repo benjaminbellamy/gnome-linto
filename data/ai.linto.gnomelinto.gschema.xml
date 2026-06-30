@@ -3,10 +3,12 @@
   <schema id="ai.linto.gnomelinto" path="/ai/linto/gnomelinto/">
     <key name="srt-url" type="s">
       <default>''</default>
-      <summary>SRT stream URL</summary>
+      <summary>Streaming URL</summary>
       <description>
-        The SRT URL of the LinTO Studio endpoint the local audio stream is sent
-        to, for example srt://studio.linto.ai:8889?streamid=SESSION_ID,0&amp;mode=caller
+        The URL of the LinTO Studio endpoint the local audio stream is sent to.
+        SRT, for example srt://studio.linto.ai:8889?streamid=SESSION_ID,0&amp;mode=caller
+        and RTMP, for example rtmp://studio.linto.ai:1935/SESSION_ID/0 are
+        supported.
       </description>
     </key>
   </schema>

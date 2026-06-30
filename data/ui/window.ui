@@ -5,7 +5,7 @@
   <menu id="primary_menu">
     <section>
       <item>
-        <attribute name="label" translatable="yes">_Preferences</attribute>
+        <attribute name="label" translatable="yes">_Stream address</attribute>
         <attribute name="action">app.preferences</attribute>
       </item>
       <item>
@@ -83,6 +83,52 @@
                 <child>
                   <object class="AdwPreferencesGroup">
                     <child>
+                      <object class="AdwExpanderRow" id="streaming_expander">
+                        <property name="title" translatable="yes">Streaming</property>
+                        <property name="subtitle" translatable="yes">Not streaming</property>
+                        <child>
+                          <object class="AdwActionRow" id="elapsed_row">
+                            <property name="title" translatable="yes">Elapsed time</property>
+                            <property name="subtitle" translatable="yes">Not streaming</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="data_row">
+                            <property name="title" translatable="yes">Data sent</property>
+                            <property name="subtitle">0 B</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="packets_row">
+                            <property name="title" translatable="yes">Packets sent</property>
+                            <property name="subtitle">0</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="bitrate_row">
+                            <property name="title" translatable="yes">Bitrate</property>
+                            <property name="subtitle">0 kbit/s</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="first_streamed_row">
+                            <property name="title" translatable="yes">First streamed</property>
+                            <property name="subtitle" translatable="yes">Never</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="latest_streamed_row">
+                            <property name="title" translatable="yes">Latest streamed</property>
+                            <property name="subtitle" translatable="yes">Never</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <child>
                       <object class="AdwExpanderRow" id="network_expander">
                         <property name="title" translatable="yes">Network</property>
                         <property name="subtitle" translatable="yes">Checking…</property>
@@ -139,52 +185,6 @@
                                 <property name="icon-name">content-loading-symbolic</property>
                               </object>
                             </child>
-                          </object>
-                        </child>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-                <child>
-                  <object class="AdwPreferencesGroup">
-                    <child>
-                      <object class="AdwExpanderRow" id="streaming_expander">
-                        <property name="title" translatable="yes">Streaming</property>
-                        <property name="subtitle" translatable="yes">Not streaming</property>
-                        <child>
-                          <object class="AdwActionRow" id="elapsed_row">
-                            <property name="title" translatable="yes">Elapsed time</property>
-                            <property name="subtitle" translatable="yes">Not streaming</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="AdwActionRow" id="data_row">
-                            <property name="title" translatable="yes">Data sent</property>
-                            <property name="subtitle">0 B</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="AdwActionRow" id="packets_row">
-                            <property name="title" translatable="yes">Packets sent</property>
-                            <property name="subtitle">0</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="AdwActionRow" id="bitrate_row">
-                            <property name="title" translatable="yes">Bitrate</property>
-                            <property name="subtitle">0 kbit/s</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="AdwActionRow" id="first_streamed_row">
-                            <property name="title" translatable="yes">First streamed</property>
-                            <property name="subtitle" translatable="yes">Never</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="AdwActionRow" id="latest_streamed_row">
-                            <property name="title" translatable="yes">Latest streamed</property>
-                            <property name="subtitle" translatable="yes">Never</property>
                           </object>
                         </child>
                       </object>

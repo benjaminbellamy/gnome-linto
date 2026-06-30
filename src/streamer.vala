@@ -55,13 +55,18 @@ namespace Linto {
         private string target_uri = "";
 
         private Gst.Pipeline? pipeline = null;
+        private Gst.Element? source_element = null;
         private uint bus_watch_id = 0;
         private ulong probe_id = 0;
         private Gst.Pad? probe_pad = null;
 
         private uint stats_timer_id = 0;
         private uint reconnect_timer_id = 0;
+        private uint eos_timer_id = 0;
         private int reconnect_attempt = 0;
+        // Set while a user-requested EOS shutdown is in flight, so the EOS bus
+        // message ends the session cleanly instead of triggering a reconnect.
+        private bool finishing = false;
 
         // Elapsed time of the current run (start to stop, spanning reconnects).
         private Timer? session_timer = null;
@@ -102,6 +107,8 @@ namespace Linto {
         public void stop () {
             bool was_active = this.state != StreamState.IDLE;
             this.cancel_reconnect ();
+            this.cancel_eos ();
+            this.finishing = false;
             if (this.stats_timer_id != 0) {
                 Source.remove (this.stats_timer_id);
                 this.stats_timer_id = 0;
@@ -113,6 +120,41 @@ namespace Linto {
                 this.change_state (StreamState.IDLE, null);
             }
             this.level (0.0);
+        }
+
+        // Ends the session gracefully: injects EOS so the muxer flushes and the
+        // SRT sink signals end of stream, then stops once EOS reaches the sink.
+        public void finish () {
+            if (this.state == StreamState.IDLE || this.finishing) {
+                return;
+            }
+            // No live pipeline to drain (waiting on a reconnect): stop now.
+            if (this.pipeline == null) {
+                this.stop ();
+                return;
+            }
+            this.finishing = true;
+            this.cancel_reconnect ();
+            // Force a clean stop if EOS does not reach the sink in time.
+            this.eos_timer_id = Timeout.add_seconds (3, () => {
+                this.eos_timer_id = 0;
+                this.stop ();
+                return Source.REMOVE;
+            });
+            // Sending EOS to the live source is more reliable than to the
+            // pipeline, so the muxer flushes and the connection closes cleanly.
+            if (this.source_element != null) {
+                this.source_element.send_event (new Gst.Event.eos ());
+            } else {
+                this.pipeline.send_event (new Gst.Event.eos ());
+            }
+        }
+
+        private void cancel_eos () {
+            if (this.eos_timer_id != 0) {
+                Source.remove (this.eos_timer_id);
+                this.eos_timer_id = 0;
+            }
         }
 
         private void change_state (StreamState s, string? detail) {
@@ -143,32 +185,20 @@ namespace Linto {
             }
 
             var convert = make_element ("audioconvert");
-            var resample = make_element ("audioresample");
-            var capsfilter = make_element ("capsfilter");
             var tee = make_element ("tee");
             var vqueue = make_element ("queue");
             var level_element = make_element ("level");
             var vsink = make_element ("fakesink");
             var squeue = make_element ("queue");
-            var encoder = make_element ("avenc_ac3");
-            var muxer = make_element ("mpegtsmux");
-            var payloader = make_element ("rtpmp2tpay");
-            var sink = make_element ("srtsink");
 
-            dynamic Gst.Element caps_dyn = capsfilter;
-            caps_dyn.caps = Gst.Caps.from_string ("audio/x-raw,rate=48000");
             LevelMeter.configure (level_element);
-            dynamic Gst.Element vsink_dyn = vsink;
-            vsink_dyn.sync = false;
-            dynamic Gst.Element sink_dyn = sink;
-            sink_dyn.uri = this.target_uri;
+            ((dynamic Gst.Element) vsink).sync = false;
 
             var pipe = new Gst.Pipeline (null);
-            pipe.add_many (src, convert, resample, capsfilter, tee,
-                vqueue, level_element, vsink,
-                squeue, encoder, muxer, payloader, sink);
+            pipe.add_many (src, convert, tee, vqueue, level_element, vsink,
+                squeue);
 
-            if (!src.link_many (convert, resample, capsfilter, tee)) {
+            if (!src.link_many (convert, tee)) {
                 throw new IOError.FAILED (
                     _("Could not link the audio capture chain."));
             }
@@ -176,11 +206,14 @@ namespace Linto {
                 throw new IOError.FAILED (
                     _("Could not link the level metering branch."));
             }
-            if (!tee.link (squeue) ||
-                !squeue.link_many (encoder, muxer, payloader, sink)) {
+            if (!tee.link (squeue)) {
                 throw new IOError.FAILED (
                     _("Could not link the streaming branch."));
             }
+
+            this.source_element = src;
+            // The rate, channels, encoder and sink depend on the protocol.
+            Gst.Element sink = this.build_output (pipe, squeue);
 
             this.probe_pad = sink.get_static_pad ("sink");
             if (this.probe_pad != null) {
@@ -209,6 +242,65 @@ namespace Linto {
             return element;
         }
 
+        // Builds the encoder and sink for the target protocol, links them after
+        // squeue, and returns the sink element.
+        private Gst.Element build_output (Gst.Pipeline pipe,
+            Gst.Element squeue) throws Error {
+            switch (StreamUrl.protocol (this.target_uri)) {
+                case StreamProtocol.SRT:
+                    // AC-3 in MPEG-TS over RTP, the LinTO SRT reference flow.
+                    // AC-3 cannot do 16 kHz, so 48 kHz is the closest fit.
+                    var resample = make_element ("audioresample");
+                    var capsfilter = make_element ("capsfilter");
+                    var encoder = make_element ("avenc_ac3");
+                    var muxer = make_element ("mpegtsmux");
+                    var payloader = make_element ("rtpmp2tpay");
+                    var sink = make_element ("srtsink");
+                    ((dynamic Gst.Element) capsfilter).caps =
+                        Gst.Caps.from_string ("audio/x-raw,rate=48000");
+                    // 7 TS packets per buffer (1316 bytes) is the standard
+                    // MPEG-TS-over-UDP/SRT payload, so the receiver locks onto
+                    // the stream reliably on connect.
+                    ((dynamic Gst.Element) muxer).alignment = 7;
+                    ((dynamic Gst.Element) sink).uri = this.target_uri;
+                    pipe.add_many (resample, capsfilter, encoder, muxer,
+                        payloader, sink);
+                    if (!squeue.link_many (resample, capsfilter, encoder, muxer,
+                            payloader, sink)) {
+                        throw new IOError.FAILED (
+                            _("Could not link the SRT output."));
+                    }
+                    return sink;
+
+                case StreamProtocol.RTMP:
+                    // AAC in FLV at 16 kHz mono, the format ASR expects.
+                    var rtmp_convert = make_element ("audioconvert");
+                    var resample = make_element ("audioresample");
+                    var capsfilter = make_element ("capsfilter");
+                    var encoder = make_element ("avenc_aac");
+                    var parser = make_element ("aacparse");
+                    var muxer = make_element ("flvmux");
+                    var sink = make_element ("rtmp2sink");
+                    ((dynamic Gst.Element) capsfilter).caps =
+                        Gst.Caps.from_string (
+                            "audio/x-raw,rate=16000,channels=1");
+                    ((dynamic Gst.Element) muxer).streamable = true;
+                    ((dynamic Gst.Element) sink).location = this.target_uri;
+                    pipe.add_many (rtmp_convert, resample, capsfilter, encoder,
+                        parser, muxer, sink);
+                    if (!squeue.link_many (rtmp_convert, resample, capsfilter,
+                            encoder, parser, muxer, sink)) {
+                        throw new IOError.FAILED (
+                            _("Could not link the RTMP output."));
+                    }
+                    return sink;
+
+                default:
+                    throw new IOError.FAILED (
+                        _("Unsupported streaming protocol."));
+            }
+        }
+
         private void teardown_pipeline () {
             if (this.bus_watch_id != 0) {
                 Source.remove (this.bus_watch_id);
@@ -219,6 +311,7 @@ namespace Linto {
             }
             this.probe_id = 0;
             this.probe_pad = null;
+            this.source_element = null;
             if (this.pipeline != null) {
                 this.pipeline.set_state (Gst.State.NULL);
                 this.pipeline = null;
@@ -331,7 +424,11 @@ namespace Linto {
                     this.recover (err.message);
                     break;
                 case Gst.MessageType.EOS:
-                    this.recover (_("The stream ended."));
+                    if (this.finishing) {
+                        this.stop ();
+                    } else {
+                        this.recover (_("The stream ended."));
+                    }
                     break;
                 default:
                     break;
