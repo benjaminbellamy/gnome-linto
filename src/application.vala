@@ -30,6 +30,7 @@ namespace Linto {
         construct {
             ActionEntry[] action_entries = {
                 { "preferences", this.on_preferences_action },
+                { "stream-controller", this.on_stream_controller_action },
                 { "about", this.on_about_action },
                 { "quit", this.on_quit_action },
             };
@@ -63,6 +64,15 @@ namespace Linto {
         private void on_preferences_action () {
             var preferences = new Linto.Preferences ();
             preferences.present (this.active_window);
+        }
+
+        private void on_stream_controller_action () {
+            var window = this.active_window as Linto.Window;
+            if (window == null) {
+                return;
+            }
+            var dialog = new Linto.StreamControllerDialog (window.control_server);
+            dialog.present (this.active_window);
         }
 
         private void on_about_action () {

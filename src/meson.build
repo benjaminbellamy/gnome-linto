@@ -6,6 +6,8 @@ gnome_linto_sources = [
   'application.vala',
   'window.vala',
   'preferences.vala',
+  'stream-controller.vala',
+  'control-server.vala',
   'stream-url.vala',
   'stats-store.vala',
   'bandwidth.vala',
@@ -19,6 +21,7 @@ gnome_linto_deps = [
   adw_dep,
   gio_dep,
   gst_dep,
+  soup_dep,
   m_dep,
   config_dep,
 ]

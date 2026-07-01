@@ -3,7 +3,7 @@
   <requires lib="gtk" version="4.0"/>
   <requires lib="libadwaita" version="1.0"/>
   <template class="LintoPreferences" parent="AdwDialog">
-    <property name="title" translatable="yes">Stream address</property>
+    <property name="title" translatable="yes">Stream Address</property>
     <property name="content-width">760</property>
     <property name="child">
       <object class="AdwToolbarView">
@@ -36,7 +36,7 @@
               <object class="AdwPreferencesGroup">
                 <child>
                   <object class="AdwEntryRow" id="url_row">
-                    <property name="title" translatable="yes">Stream address</property>
+                    <property name="title" translatable="yes">Stream Address</property>
                     <property name="input-purpose">url</property>
                     <signal name="entry-activated" handler="on_save"/>
                   </object>

@@ -11,5 +11,28 @@
         supported.
       </description>
     </key>
+    <key name="control-enabled" type="b">
+      <default>false</default>
+      <summary>Enable the control server</summary>
+      <description>
+        Whether the embedded control server (for Stream Controller) is running.
+      </description>
+    </key>
+    <key name="control-password" type="s">
+      <default>''</default>
+      <summary>Control server password</summary>
+      <description>
+        The password a Stream Controller client must supply. Generated on first
+        use; regenerated only when the user asks for a new one.
+      </description>
+    </key>
+    <key name="control-port" type="i">
+      <default>4466</default>
+      <range min="1" max="65535"/>
+      <summary>Control server port</summary>
+      <description>
+        The TCP port the control server listens on.
+      </description>
+    </key>
   </schema>
 </schemalist>

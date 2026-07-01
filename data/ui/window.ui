@@ -5,8 +5,12 @@
   <menu id="primary_menu">
     <section>
       <item>
-        <attribute name="label" translatable="yes">_Stream address</attribute>
+        <attribute name="label" translatable="yes">_Stream Address</attribute>
         <attribute name="action">app.preferences</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">Stream _Controller</attribute>
+        <attribute name="action">app.stream-controller</attribute>
       </item>
       <item>
         <attribute name="label" translatable="yes">_About LinTO</attribute>
@@ -213,6 +217,17 @@
                             </child>
                           </object>
                         </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwPreferencesGroup" id="control_group">
+                    <property name="visible">false</property>
+                    <child>
+                      <object class="AdwActionRow" id="control_status_row">
+                        <property name="title" translatable="yes">Stream Controller</property>
+                        <property name="subtitle" translatable="yes">No Stream Controller connected</property>
                       </object>
                     </child>
                   </object>

@@ -3,5 +3,6 @@
   <gresource prefix="/ai/linto/gnomelinto">
     <file preprocess="xml-stripblanks">ui/window.ui</file>
     <file preprocess="xml-stripblanks">ui/preferences.ui</file>
+    <file preprocess="xml-stripblanks">ui/stream-controller.ui</file>
   </gresource>
 </gresources>

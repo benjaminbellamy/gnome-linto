@@ -43,6 +43,8 @@ namespace Linto {
         [GtkChild] private unowned Gtk.Image bandwidth_icon;
         [GtkChild] private unowned Adw.ExpanderRow network_expander;
         [GtkChild] private unowned Adw.ExpanderRow streaming_expander;
+        [GtkChild] private unowned Adw.PreferencesGroup control_group;
+        [GtkChild] private unowned Adw.ActionRow control_status_row;
         [GtkChild] private unowned Gtk.Button refresh_button;
 
         private const int CHECK_ADAPTER = 0;
@@ -74,6 +76,12 @@ namespace Linto {
         // streamer's per-run counts.
         private StatsStore.Entry baseline;
         private string active_url = "";
+
+        public ControlServer control_server;
+        // Latest totals, mirrored to the control server status.
+        private int64 status_elapsed = 0;
+        private int64 status_bytes = 0;
+        private int status_bitrate = 0;
 
         public Window (Adw.Application app) {
             Object (application: app);
@@ -114,9 +122,90 @@ namespace Linto {
 
             this.close_request.connect (this.on_close_request);
 
+            // Control server (Stream Controller). Generate a password on first
+            // use, then start it if enabled.
+            if (this.settings.get_string ("control-password") == "") {
+                this.settings.set_string ("control-password",
+                    ControlServer.generate_password ());
+            }
+            this.control_server = new ControlServer ();
+            this.control_server.command.connect (this.on_control_command);
+            // Show the control-server connection status on the main window,
+            // visible only while the server is enabled.
+            this.control_status_row.subtitle = this.control_server.status_message;
+            this.control_server.connection_changed.connect ((message) => {
+                this.control_status_row.subtitle = message;
+            });
+            this.settings.bind ("control-enabled", this.control_group, "visible",
+                SettingsBindFlags.GET);
+            this.settings.changed["control-enabled"].connect (() => {
+                this.control_server.apply_settings ();
+            });
+            this.settings.changed["control-port"].connect (() => {
+                this.control_server.apply_settings ();
+            });
+            this.settings.changed["srt-url"].connect (this.push_status);
+            this.control_server.apply_settings ();
+            this.push_status ();
+
             this.run_checks.begin ();
             // Measured once at startup; the refresh button re-runs the others.
             this.measure_bandwidth.begin ();
+        }
+
+        private void on_control_command (string action) {
+            if (action == "toggle") {
+                this.toggle_stream ();
+            } else if (action == "start") {
+                if (!this.streamer.is_active) {
+                    this.toggle_stream ();
+                }
+            } else if (action == "pause") {
+                if (this.streamer.is_active) {
+                    this.toggle_stream ();
+                }
+            }
+        }
+
+        private void push_status () {
+            this.control_server.broadcast_status (this.build_status_json ());
+        }
+
+        private bool network_all_ok () {
+            foreach (var status in this.check_statuses) {
+                if (status != CheckStatus.OK) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private string build_status_json () {
+            string state;
+            switch (this.streamer.state) {
+                case StreamState.CONNECTING: state = "connecting"; break;
+                case StreamState.STREAMING: state = "streaming"; break;
+                case StreamState.RECONNECTING: state = "reconnecting"; break;
+                default: state = "idle"; break;
+            }
+            string url = this.settings.get_string ("srt-url").strip ();
+            bool ready = StreamUrl.validate (url) == null
+                && this.audio_monitor.devices.length > 0;
+            string protocol;
+            switch (StreamUrl.protocol (url)) {
+                case StreamProtocol.SRT: protocol = "SRT"; break;
+                case StreamProtocol.RTMP: protocol = "RTMP"; break;
+                default: protocol = ""; break;
+            }
+            return "{\"type\":\"status\",\"state\":\"" + state + "\""
+                + ",\"streaming\":" + (this.streamer.is_active ? "true" : "false")
+                + ",\"ready\":" + (ready ? "true" : "false")
+                + ",\"network_ok\":" + (this.network_all_ok () ? "true" : "false")
+                + ",\"protocol\":\"" + protocol + "\""
+                + ",\"elapsed\":" + this.status_elapsed.to_string ()
+                + ",\"data_bytes\":" + this.status_bytes.to_string ()
+                + ",\"bitrate_kbps\":" + this.status_bitrate.to_string ()
+                + "}";
         }
 
         private async void measure_bandwidth () {
@@ -213,6 +302,10 @@ namespace Linto {
 
         [GtkCallback]
         private void on_stream_clicked () {
+            this.toggle_stream ();
+        }
+
+        public void toggle_stream () {
             if (this.streamer.is_active) {
                 // Pausing ends the stream gracefully with an end of stream.
                 this.streamer.finish ();
@@ -293,6 +386,7 @@ namespace Linto {
                     this.audio_monitor.select (this.device_row.selected);
                     break;
             }
+            this.push_status ();
         }
 
         private void on_stream_stats (int64 elapsed, uint64 bytes,
@@ -301,6 +395,10 @@ namespace Linto {
             int64 total_packets = this.baseline.packets + (int64) packets;
             int64 total_seconds = this.baseline.seconds + elapsed;
             int64 now = real_now ();
+
+            this.status_elapsed = total_seconds;
+            this.status_bytes = total_bytes;
+            this.status_bitrate = (int) bitrate_kbps;
 
             string elapsed_text = format_duration (total_seconds);
             this.elapsed_row.subtitle = elapsed_text;
@@ -324,6 +422,8 @@ namespace Linto {
             entry.seconds = total_seconds;
             this.stats_store.put (this.active_url, entry);
             this.stats_store.flush_throttled ();
+
+            this.push_status ();
         }
 
         private void show_stored_stats (string url) {
@@ -639,6 +739,7 @@ namespace Linto {
             this.check_statuses[index] = status;
             set_status (icon, status);
             this.update_network_summary ();
+            this.push_status ();
         }
 
         private void update_network_summary () {

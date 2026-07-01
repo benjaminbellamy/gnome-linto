@@ -2,9 +2,12 @@ data/ai.linto.gnomelinto.desktop.in
 data/ai.linto.gnomelinto.metainfo.xml.in
 data/ui/window.ui
 data/ui/preferences.ui
+data/ui/stream-controller.ui
 src/application.vala
 src/window.vala
 src/preferences.vala
+src/stream-controller.vala
+src/control-server.vala
 src/stream-url.vala
 src/stats-store.vala
 src/level-meter.vala
