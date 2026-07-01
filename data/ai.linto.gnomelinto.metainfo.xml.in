@@ -35,6 +35,13 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.1" date="2026-07-01">
+      <description>
+        <p>The SRT stream now uses Opus (16 kHz mono) instead of AC-3, for much
+          lower CPU and bandwidth, better suited to speech recognition. RTMP is
+          unchanged.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-07-01">
       <description>
         <p>Adds remote control from Stream Controller over a built-in WebSocket
