@@ -33,9 +33,10 @@ namespace Linto {
 
     // Streams a selected audio input to a LinTO SRT endpoint and keeps the
     // session alive across transient failures by reconnecting with backoff:
-    //   <source> ! audioconvert ! audioresample ! rate=48000 ! tee
+    //   <source> ! audioconvert ! tee
     //     tee. ! queue ! level ! fakesink            (VU meter tap)
-    //     tee. ! queue ! avenc_ac3 ! mpegtsmux ! rtpmp2tpay ! srtsink
+    //     tee. ! queue ! audioconvert ! audioresample ! rate=16000,channels=1
+    //            ! opusenc ! mpegtsmux ! rtpmp2tpay ! srtsink
     public class Streamer : Object {
         public signal void level (double peak);
         public signal void stats (int64 elapsed_seconds, uint64 bytes_sent,
@@ -248,25 +249,29 @@ namespace Linto {
             Gst.Element squeue) throws Error {
             switch (StreamUrl.protocol (this.target_uri)) {
                 case StreamProtocol.SRT:
-                    // AC-3 in MPEG-TS over RTP, the LinTO SRT reference flow.
-                    // AC-3 cannot do 16 kHz, so 48 kHz is the closest fit.
+                    // Opus in MPEG-TS over RTP. Opus is built for 16 kHz mono
+                    // speech: low CPU and low bitrate, and it decodes to the
+                    // 16 kHz mono the ASR expects.
+                    var srt_convert = make_element ("audioconvert");
                     var resample = make_element ("audioresample");
                     var capsfilter = make_element ("capsfilter");
-                    var encoder = make_element ("avenc_ac3");
+                    var encoder = make_element ("opusenc");
                     var muxer = make_element ("mpegtsmux");
                     var payloader = make_element ("rtpmp2tpay");
                     var sink = make_element ("srtsink");
                     ((dynamic Gst.Element) capsfilter).caps =
-                        Gst.Caps.from_string ("audio/x-raw,rate=48000");
+                        Gst.Caps.from_string (
+                            "audio/x-raw,rate=16000,channels=1");
+                    ((dynamic Gst.Element) encoder).bitrate = 24000;
                     // 7 TS packets per buffer (1316 bytes) is the standard
                     // MPEG-TS-over-UDP/SRT payload, so the receiver locks onto
                     // the stream reliably on connect.
                     ((dynamic Gst.Element) muxer).alignment = 7;
                     ((dynamic Gst.Element) sink).uri = this.target_uri;
-                    pipe.add_many (resample, capsfilter, encoder, muxer,
-                        payloader, sink);
-                    if (!squeue.link_many (resample, capsfilter, encoder, muxer,
-                            payloader, sink)) {
+                    pipe.add_many (srt_convert, resample, capsfilter, encoder,
+                        muxer, payloader, sink);
+                    if (!squeue.link_many (srt_convert, resample, capsfilter,
+                            encoder, muxer, payloader, sink)) {
                         throw new IOError.FAILED (
                             _("Could not link the SRT output."));
                     }
