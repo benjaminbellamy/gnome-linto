@@ -40,11 +40,20 @@ namespace Linto {
 
         public override void activate () {
             base.activate ();
+            bool first = this.active_window == null;
             var window = this.active_window;
             if (window == null) {
                 window = new Linto.Window (this);
             }
             window.present ();
+
+            // On first launch with no address configured, prompt for it.
+            if (first) {
+                var settings = new GLib.Settings (Config.APP_ID);
+                if (settings.get_string ("srt-url").strip () == "") {
+                    this.on_preferences_action ();
+                }
+            }
         }
 
         private void on_quit_action () {

@@ -95,6 +95,35 @@ namespace Linto {
             return null;
         }
 
+        // Creates the source element for a device and names its PipeWire node
+        // "LinTO" so it is recognizable in a patchbay such as qpwgraph.
+        public static Gst.Element? create_source (Gst.Device device) {
+            var src = device.create_element (null);
+            if (src == null) {
+                return null;
+            }
+            unowned Gst.ElementFactory? factory = src.get_factory ();
+            if (factory != null && factory.get_name () == "pipewiresrc") {
+                dynamic Gst.Element pw = src;
+                unowned string end;
+                var stream_props = new Gst.Structure.from_string (
+                    "props, node.name=(string)LinTO, " +
+                    "node.description=(string)LinTO, media.name=(string)LinTO",
+                    out end);
+                if (stream_props != null) {
+                    pw.stream_properties = stream_props;
+                }
+                // Leave the client application name empty so a patchbay shows
+                // just the node title "LinTO", not "LinTO [LinTO]".
+                var client_props = new Gst.Structure.from_string (
+                    "props, application.name=(string)\"\"", out end);
+                if (client_props != null) {
+                    pw.client_properties = client_props;
+                }
+            }
+            return src;
+        }
+
         // Builds and starts a monitoring pipeline for the device at the given
         // index. Passing an out-of-range index simply stops monitoring.
         public void select (uint index) {
@@ -106,7 +135,7 @@ namespace Linto {
             }
 
             var device = this.devices.get ((int) index);
-            var src = device.create_element (null);
+            var src = create_source (device);
             var convert = Gst.ElementFactory.make ("audioconvert", null);
             var level_element = Gst.ElementFactory.make ("level", null);
             var sink = Gst.ElementFactory.make ("fakesink", null);

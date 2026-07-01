@@ -35,6 +35,13 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.2" date="2026-07-01">
+      <description>
+        <p>Adds network latency and upload bandwidth checks, names the PipeWire
+          input "LinTO", opens the address dialog on first launch, and locks the
+          address while streaming.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-07-01">
       <description>
         <p>Adds RTMP output (16 kHz mono) alongside SRT, a clean end of stream

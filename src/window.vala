@@ -37,6 +37,10 @@ namespace Linto {
         [GtkChild] private unowned Gtk.Image internet_icon;
         [GtkChild] private unowned Adw.ActionRow website_row;
         [GtkChild] private unowned Gtk.Image website_icon;
+        [GtkChild] private unowned Adw.ActionRow latency_row;
+        [GtkChild] private unowned Gtk.Image latency_icon;
+        [GtkChild] private unowned Adw.ActionRow bandwidth_row;
+        [GtkChild] private unowned Gtk.Image bandwidth_icon;
         [GtkChild] private unowned Adw.ExpanderRow network_expander;
         [GtkChild] private unowned Adw.ExpanderRow streaming_expander;
         [GtkChild] private unowned Gtk.Button refresh_button;
@@ -46,7 +50,11 @@ namespace Linto {
         private const int CHECK_PUBLIC_IP = 2;
         private const int CHECK_INTERNET = 3;
         private const int CHECK_WEBSITE = 4;
-        private CheckStatus[] check_statuses = new CheckStatus[5];
+        private const int CHECK_LATENCY = 5;
+        private const int CHECK_BANDWIDTH = 6;
+        // Minimum upload the check treats as sufficient to stream (Mbit/s).
+        private const double MIN_UPLOAD_MBPS = 1.0;
+        private CheckStatus[] check_statuses = new CheckStatus[7];
         [GtkChild] private unowned Adw.ComboRow device_row;
         [GtkChild] private unowned Gtk.LevelBar level_bar;
         [GtkChild] private unowned Gtk.Button stream_button;
@@ -107,6 +115,28 @@ namespace Linto {
             this.close_request.connect (this.on_close_request);
 
             this.run_checks.begin ();
+            // Measured once at startup; the refresh button re-runs the others.
+            this.measure_bandwidth.begin ();
+        }
+
+        private async void measure_bandwidth () {
+            this.apply_status (CHECK_BANDWIDTH, this.bandwidth_icon,
+                CheckStatus.CHECKING);
+            double mbps = yield Bandwidth.upload_mbps ();
+            if (mbps < 0.0) {
+                this.bandwidth_row.subtitle = _("Unavailable");
+                this.apply_status (CHECK_BANDWIDTH, this.bandwidth_icon,
+                    CheckStatus.BAD);
+            } else if (mbps >= MIN_UPLOAD_MBPS) {
+                this.bandwidth_row.subtitle = "%.1f Mbit/s".printf (mbps);
+                this.apply_status (CHECK_BANDWIDTH, this.bandwidth_icon,
+                    CheckStatus.OK);
+            } else {
+                this.bandwidth_row.subtitle =
+                    _("%.1f Mbit/s (too low)").printf (mbps);
+                this.apply_status (CHECK_BANDWIDTH, this.bandwidth_icon,
+                    CheckStatus.BAD);
+            }
         }
 
         private void populate_devices () {
@@ -224,7 +254,9 @@ namespace Linto {
             string id = device_identifier;
             this.streamer.start (() => {
                 var device = this.audio_monitor.find_device (id);
-                return (device != null) ? device.create_element (null) : null;
+                return (device != null)
+                    ? AudioMonitor.create_source (device)
+                    : null;
             }, url);
         }
 
@@ -237,6 +269,8 @@ namespace Linto {
                     this.stream_button.remove_css_class ("suggested-action");
                     this.stream_button.add_css_class ("destructive-action");
                     this.device_row.sensitive = false;
+                    // The address cannot be changed mid-stream.
+                    this.set_prefs_enabled (false);
                     string lead = protocol_lead (this.active_url);
                     if (state == StreamState.CONNECTING) {
                         this.streaming_expander.subtitle = lead + _("Connecting…");
@@ -251,6 +285,7 @@ namespace Linto {
                     this.stream_button.add_css_class ("suggested-action");
                     this.device_row.sensitive =
                         this.audio_monitor.devices.length > 0;
+                    this.set_prefs_enabled (true);
                     // Persist the final totals for this URL.
                     this.stats_store.flush ();
                     // Statistics stay on screen; they are never reset.
@@ -370,6 +405,19 @@ namespace Linto {
             this.toast_overlay.add_toast (new Adw.Toast (message));
         }
 
+        // Enables or disables the Stream address action (its menu item and
+        // shortcut), so the address cannot be changed while streaming.
+        private void set_prefs_enabled (bool enabled) {
+            var app = this.application as Gtk.Application;
+            if (app == null) {
+                return;
+            }
+            var action = app.lookup_action ("preferences") as SimpleAction;
+            if (action != null) {
+                action.set_enabled (enabled);
+            }
+        }
+
         private static string format_duration (int64 seconds) {
             int h = (int) (seconds / 3600);
             int m = (int) ((seconds % 3600) / 60);
@@ -385,6 +433,7 @@ namespace Linto {
             this.apply_status (CHECK_PUBLIC_IP, this.public_ip_icon, CheckStatus.CHECKING);
             this.apply_status (CHECK_INTERNET, this.internet_icon, CheckStatus.CHECKING);
             this.apply_status (CHECK_WEBSITE, this.website_icon, CheckStatus.CHECKING);
+            this.apply_status (CHECK_LATENCY, this.latency_icon, CheckStatus.CHECKING);
 
             // Local IP and adapter are resolved together and quickly.
             update_local_and_adapter ();
@@ -392,10 +441,50 @@ namespace Linto {
             // Network round-trips run concurrently.
             this.check_internet.begin ();
             this.check_website.begin ();
+            this.check_latency.begin ();
             this.check_public_ip.begin ((obj, res) => {
                 this.check_public_ip.end (res);
                 this.refresh_button.sensitive = true;
             });
+        }
+
+        // Measures round-trip latency to the LinTO server as the time to open a
+        // TCP connection (the sandbox cannot send ICMP echo). Succeeds whenever
+        // the connection is established; there is no latency threshold.
+        private async void check_latency () {
+            int latency_ms = -1;
+            try {
+                var resolver = Resolver.get_default ();
+                var addresses = yield resolver.lookup_by_name_async (
+                    "studio.linto.ai", null);
+                if (addresses != null && addresses.length () > 0) {
+                    var target = new InetSocketAddress (addresses.data, 443);
+                    var client = new SocketClient ();
+                    client.set_timeout (6);
+                    var timer = new Timer ();
+                    var conn = yield client.connect_async (target, null);
+                    double elapsed = timer.elapsed ();
+                    if (conn != null) {
+                        latency_ms = (int) (elapsed * 1000.0);
+                        try {
+                            conn.close ();
+                        } catch (Error e) {
+                            // Closing a probe connection can be ignored.
+                        }
+                    }
+                }
+            } catch (Error e) {
+                latency_ms = -1;
+            }
+            if (latency_ms >= 0) {
+                this.latency_row.subtitle = _("%d ms").printf (latency_ms);
+                this.apply_status (CHECK_LATENCY, this.latency_icon,
+                    CheckStatus.OK);
+            } else {
+                this.latency_row.subtitle = _("No response");
+                this.apply_status (CHECK_LATENCY, this.latency_icon,
+                    CheckStatus.BAD);
+            }
         }
 
         private void update_local_and_adapter () {
@@ -566,7 +655,7 @@ namespace Linto {
                 this.network_expander.subtitle = _("Checking…");
             } else {
                 this.network_expander.subtitle =
-                    _("%d of %d checks passed").printf (ok,
+                    _("%d of %d checks OK").printf (ok,
                         this.check_statuses.length);
             }
         }

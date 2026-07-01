@@ -8,6 +8,7 @@ gnome_linto_sources = [
   'preferences.vala',
   'stream-url.vala',
   'stats-store.vala',
+  'bandwidth.vala',
   'level-meter.vala',
   'audio-monitor.vala',
   'streamer.vala',
