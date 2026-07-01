@@ -55,6 +55,11 @@ ninja -C builddir
   link drops.
 - Live transport statistics (elapsed time, data sent, packets, bitrate), saved
   per URL with first and latest streaming timestamps.
+- Remote control from a Stream Deck through the companion
+  [gnome-linto-streamcontroller](https://github.com/benjaminbellamy/gnome-linto-streamcontroller)
+  plugin for [Stream Controller](https://github.com/StreamController/StreamController):
+  a built-in control server lets the button start and pause streaming and show
+  live status.
 
 ## License
 
