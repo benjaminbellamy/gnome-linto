@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="LintoDebugDialog" parent="AdwDialog">
+    <property name="title" translatable="yes">Debug Mode</property>
+    <property name="content-width">480</property>
+    <property name="child">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar"/>
+        </child>
+        <property name="content">
+          <object class="AdwToastOverlay" id="toast_overlay">
+            <property name="child">
+          <object class="AdwPreferencesPage">
+            <child>
+              <object class="AdwPreferencesGroup">
+                <property name="title" translatable="yes">Diagnostic logging</property>
+                <property name="description" translatable="yes">Write detailed streaming diagnostics to a log file to help track down connection problems. Off by default.</property>
+                <child>
+                  <object class="AdwSwitchRow" id="enable_row">
+                    <property name="title" translatable="yes">Enable logging</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow" id="path_row">
+                    <property name="title" translatable="yes">Log folder</property>
+                    <child type="suffix">
+                      <object class="GtkButton" id="open_button">
+                        <property name="label" translatable="yes">Open Folder</property>
+                        <property name="valign">center</property>
+                        <signal name="clicked" handler="on_open_folder"/>
+                      </object>
+                    </child>
+                    <child type="suffix">
+                      <object class="GtkButton" id="copy_button">
+                        <property name="label" translatable="yes">Copy Log</property>
+                        <property name="valign">center</property>
+                        <signal name="clicked" handler="on_copy_log"/>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>

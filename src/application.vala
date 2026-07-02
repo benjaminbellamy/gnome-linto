@@ -31,6 +31,7 @@ namespace Linto {
             ActionEntry[] action_entries = {
                 { "preferences", this.on_preferences_action },
                 { "stream-controller", this.on_stream_controller_action },
+                { "debug", this.on_debug_action },
                 { "about", this.on_about_action },
                 { "quit", this.on_quit_action },
             };
@@ -41,6 +42,9 @@ namespace Linto {
 
         public override void activate () {
             base.activate ();
+            // Bring the logger up early so a persisted debug setting is honored
+            // and toggles take effect immediately, not just once streaming runs.
+            DebugLog.get_default ();
             bool first = this.active_window == null;
             var window = this.active_window;
             if (window == null) {
@@ -72,6 +76,11 @@ namespace Linto {
                 return;
             }
             var dialog = new Linto.StreamControllerDialog (window.control_server);
+            dialog.present (this.active_window);
+        }
+
+        private void on_debug_action () {
+            var dialog = new Linto.DebugDialog ();
             dialog.present (this.active_window);
         }
 

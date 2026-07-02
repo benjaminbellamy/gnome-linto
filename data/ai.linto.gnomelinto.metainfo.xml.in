@@ -35,6 +35,13 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.3" date="2026-07-03">
+      <description>
+        <p>Adds a Debug Mode dialog that records a per-session log file (with the
+          network checks and stream format) to help track down streaming
+          problems. Off by default.</p>
+      </description>
+    </release>
     <release version="1.0.2" date="2026-07-02">
       <description>
         <p>The network refresh button now re-runs all checks, including the

@@ -180,6 +180,41 @@ namespace Linto {
             return true;
         }
 
+        // Records the latest pre-flight check values in the debug log, so a
+        // captured session shows the network state it started from.
+        private void log_network_checks () {
+            var dbg = DebugLog.get_default ();
+            if (!dbg.enabled) {
+                return;
+            }
+            log_check (dbg, "adapter", this.adapter_row.subtitle,
+                this.check_statuses[CHECK_ADAPTER]);
+            log_check (dbg, "local IP", this.local_ip_row.subtitle,
+                this.check_statuses[CHECK_LOCAL_IP]);
+            log_check (dbg, "public IP", this.public_ip_row.subtitle,
+                this.check_statuses[CHECK_PUBLIC_IP]);
+            log_check (dbg, "internet", this.internet_row.subtitle,
+                this.check_statuses[CHECK_INTERNET]);
+            log_check (dbg, "server", this.website_row.subtitle,
+                this.check_statuses[CHECK_WEBSITE]);
+            log_check (dbg, "latency", this.latency_row.subtitle,
+                this.check_statuses[CHECK_LATENCY]);
+            log_check (dbg, "upload", this.bandwidth_row.subtitle,
+                this.check_statuses[CHECK_BANDWIDTH]);
+        }
+
+        private static void log_check (DebugLog dbg, string name,
+            string? value, CheckStatus status) {
+            string mark;
+            switch (status) {
+                case CheckStatus.OK: mark = "OK"; break;
+                case CheckStatus.BAD: mark = "BAD"; break;
+                default: mark = "checking"; break;
+            }
+            dbg.log ("network",
+                name + ": " + (value ?? "") + " [" + mark + "]");
+        }
+
         private string build_status_json () {
             string state;
             switch (this.streamer.state) {
@@ -340,6 +375,11 @@ namespace Linto {
             seed.latest_unix = now;
             this.stats_store.put (url, seed);
             this.stats_store.flush ();
+
+            // Open a fresh debug log for this session and record the current
+            // network checks before streaming (no-op when logging is disabled).
+            DebugLog.get_default ().new_session ();
+            this.log_network_checks ();
 
             // Free the preview pipeline so the device is available to stream.
             this.audio_monitor.stop ();

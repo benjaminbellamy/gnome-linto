@@ -7,6 +7,8 @@ gnome_linto_sources = [
   'window.vala',
   'preferences.vala',
   'stream-controller.vala',
+  'debug-dialog.vala',
+  'debug-log.vala',
   'control-server.vala',
   'stream-url.vala',
   'stats-store.vala',

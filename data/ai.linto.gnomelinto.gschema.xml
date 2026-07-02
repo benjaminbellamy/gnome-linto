@@ -26,6 +26,14 @@
         use; regenerated only when the user asks for a new one.
       </description>
     </key>
+    <key name="debug-enabled" type="b">
+      <default>false</default>
+      <summary>Enable debug logging</summary>
+      <description>
+        Whether verbose diagnostic logging to a file is enabled. Off by default;
+        used to track down streaming problems.
+      </description>
+    </key>
     <key name="control-port" type="i">
       <default>4466</default>
       <range min="1" max="65535"/>

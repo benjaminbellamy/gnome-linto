@@ -57,6 +57,9 @@ namespace Linto {
 
         private Gst.Pipeline? pipeline = null;
         private Gst.Element? source_element = null;
+        // Held only for SRT sessions, so debug logging can read its transport
+        // stats (packets/bytes sent, ACKs, loss, RTT) each tick.
+        private Gst.Element? srt_sink = null;
         private uint bus_watch_id = 0;
         private ulong probe_id = 0;
         private Gst.Pad? probe_pad = null;
@@ -100,6 +103,9 @@ namespace Linto {
             this.reconnect_attempt = 0;
             this.session_timer = new Timer ();
 
+            var dbg = DebugLog.get_default ();
+            dbg.log ("session", "start uri=" + uri);
+            dbg.log ("format", format_description (uri));
             this.change_state (StreamState.CONNECTING, null);
             this.stats_timer_id = Timeout.add_seconds (1, this.on_tick);
             this.try_build ();
@@ -135,6 +141,7 @@ namespace Linto {
                 return;
             }
             this.finishing = true;
+            DebugLog.get_default ().log ("session", "finish: sending EOS");
             this.cancel_reconnect ();
             // Force a clean stop if EOS does not reach the sink in time.
             this.eos_timer_id = Timeout.add_seconds (3, () => {
@@ -160,7 +167,35 @@ namespace Linto {
 
         private void change_state (StreamState s, string? detail) {
             this.state = s;
+            DebugLog.get_default ().log ("state",
+                state_name (s) + (detail != null ? " (" + detail + ")" : ""));
             this.state_changed (s, detail);
+        }
+
+        // The audio format sent for the target protocol, for the debug log
+        // header. The encoder settings are the constants used in build_output.
+        private static string format_description (string uri) {
+            switch (StreamUrl.protocol (uri)) {
+                case StreamProtocol.SRT:
+                    return "Opus audio 24 kbit/s, 16000 Hz, mono, "
+                        + "16 bit/sample PCM input; MPEG-TS over RTP overhead "
+                        + "raises the wire rate to about 100 kbit/s";
+                case StreamProtocol.RTMP:
+                    return "AAC audio, 16000 Hz, mono, 16 bit/sample PCM input, "
+                        + "FLV";
+                default:
+                    return "unknown protocol";
+            }
+        }
+
+        private static string state_name (StreamState s) {
+            switch (s) {
+                case StreamState.IDLE: return "IDLE";
+                case StreamState.CONNECTING: return "CONNECTING";
+                case StreamState.STREAMING: return "STREAMING";
+                case StreamState.RECONNECTING: return "RECONNECTING";
+                default: return "?";
+            }
         }
 
         // Attempts to (re)build the pipeline; any failure schedules a retry
@@ -231,6 +266,7 @@ namespace Linto {
                 throw new IOError.FAILED (
                     _("The streaming pipeline failed to start."));
             }
+            DebugLog.get_default ().log ("pipeline", "state=PLAYING");
             this.pipeline = pipe;
         }
 
@@ -275,6 +311,7 @@ namespace Linto {
                         throw new IOError.FAILED (
                             _("Could not link the SRT output."));
                     }
+                    this.srt_sink = sink;
                     return sink;
 
                 case StreamProtocol.RTMP:
@@ -317,6 +354,7 @@ namespace Linto {
             this.probe_id = 0;
             this.probe_pad = null;
             this.source_element = null;
+            this.srt_sink = null;
             if (this.pipeline != null) {
                 this.pipeline.set_state (Gst.State.NULL);
                 this.pipeline = null;
@@ -343,6 +381,10 @@ namespace Linto {
 
             int shift = int.min (this.reconnect_attempt, 16);
             int backoff = int.min (1000 << shift, MAX_BACKOFF_MS);
+            DebugLog.get_default ().log ("reconnect",
+                "attempt=" + this.reconnect_attempt.to_string () +
+                " backoff_ms=" + backoff.to_string () +
+                (detail != null ? " reason=" + detail : ""));
             this.reconnect_attempt++;
 
             this.reconnect_timer_id = Timeout.add (backoff, () => {
@@ -411,6 +453,20 @@ namespace Linto {
             uint64 delta = total - this.last_tick_bytes;
             this.last_tick_bytes = total;
             double bitrate_kbps = (double) delta * 8.0 / 1000.0;
+
+            // The SRT transport stats are the key clue for the intermittent
+            // start: on a failed start the socket connects and packets are sent
+            // and ACKed just like a working one, which points at the server.
+            var dbg = DebugLog.get_default ();
+            if (dbg.enabled && this.srt_sink != null) {
+                Gst.Structure? st = ((dynamic Gst.Element) this.srt_sink).stats;
+                if (st != null) {
+                    dbg.log ("srt", "t=" + elapsed.to_string () +
+                        "s app_bytes=" + total.to_string () +
+                        " " + st.to_string ());
+                }
+            }
+
             this.stats (elapsed, total, packets, bitrate_kbps);
             return Source.CONTINUE;
         }
@@ -426,9 +482,13 @@ namespace Linto {
                     Error err;
                     string debug;
                     message.parse_error (out err, out debug);
+                    DebugLog.get_default ().log ("bus",
+                        "ERROR: " + err.message + " | " + debug);
                     this.recover (err.message);
                     break;
                 case Gst.MessageType.EOS:
+                    DebugLog.get_default ().log ("bus",
+                        "EOS finishing=" + this.finishing.to_string ());
                     if (this.finishing) {
                         this.stop ();
                     } else {
