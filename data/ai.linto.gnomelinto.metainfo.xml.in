@@ -35,6 +35,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.2" date="2026-07-02">
+      <description>
+        <p>The network refresh button now re-runs all checks, including the
+          upload bandwidth measurement.</p>
+      </description>
+    </release>
     <release version="1.0.1" date="2026-07-01">
       <description>
         <p>The SRT stream now uses Opus (16 kHz mono) instead of AC-3, for much

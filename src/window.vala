@@ -298,6 +298,7 @@ namespace Linto {
         [GtkCallback]
         private void on_refresh_clicked () {
             this.run_checks.begin ();
+            this.measure_bandwidth.begin ();
         }
 
         [GtkCallback]
