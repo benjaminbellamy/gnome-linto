@@ -6,9 +6,19 @@
       <summary>Streaming URL</summary>
       <description>
         The URL of the LinTO Studio endpoint the local audio stream is sent to.
-        SRT, for example srt://studio.linto.ai:8889?streamid=SESSION_ID,0&amp;mode=caller
+        This is the currently selected address, taken from the saved address
+        list. SRT, for example
+        srt://studio.linto.ai:8889?streamid=SESSION_ID,0&amp;mode=caller
         and RTMP, for example rtmp://studio.linto.ai:1935/SESSION_ID/0 are
         supported.
+      </description>
+    </key>
+    <key name="addresses" type="a(ss)">
+      <default>[]</default>
+      <summary>Saved stream addresses</summary>
+      <description>
+        The saved stream addresses, each a (label, URL) pair. The user picks
+        which one is active; its URL is mirrored to srt-url.
       </description>
     </key>
     <key name="control-enabled" type="b">

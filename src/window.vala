@@ -57,6 +57,7 @@ namespace Linto {
         // Minimum upload the check treats as sufficient to stream (Mbit/s).
         private const double MIN_UPLOAD_MBPS = 1.0;
         private CheckStatus[] check_statuses = new CheckStatus[7];
+        [GtkChild] private unowned Adw.ActionRow address_row;
         [GtkChild] private unowned Adw.ComboRow device_row;
         [GtkChild] private unowned Gtk.LevelBar level_bar;
         [GtkChild] private unowned Gtk.Button stream_button;
@@ -76,6 +77,9 @@ namespace Linto {
         // streamer's per-run counts.
         private StatsStore.Entry baseline;
         private string active_url = "";
+        // True when the current session never connected (likely a bad address),
+        // so the streaming summary keeps showing the error while it retries.
+        private bool connect_failed = false;
 
         public ControlServer control_server;
         // Latest totals, mirrored to the control server status.
@@ -91,12 +95,15 @@ namespace Linto {
             this.settings = new GLib.Settings (Config.APP_ID);
             this.stats_store = new StatsStore ();
             this.show_stored_stats (this.settings.get_string ("srt-url").strip ());
+            this.update_address_row ();
             this.settings.changed["srt-url"].connect (() => {
                 if (!this.streamer.is_active) {
                     this.show_stored_stats (
                         this.settings.get_string ("srt-url").strip ());
                 }
             });
+            this.settings.changed["srt-url"].connect (this.update_address_row);
+            this.settings.changed["addresses"].connect (this.update_address_row);
 
             this.audio_monitor = new AudioMonitor ();
             this.audio_monitor.level.connect ((peak) => {
@@ -104,11 +111,9 @@ namespace Linto {
             });
 
             this.streamer = new Streamer ();
-            this.streamer.level.connect ((peak) => {
-                this.level_bar.value = peak;
-            });
             this.streamer.state_changed.connect (this.on_stream_state_changed);
             this.streamer.stats.connect (this.on_stream_stats);
+            this.streamer.connection_error.connect (this.on_connection_error);
 
             this.populate_devices ();
             this.device_row.notify["selected"].connect (() => {
@@ -341,6 +346,19 @@ namespace Linto {
             this.toggle_stream ();
         }
 
+        [GtkCallback]
+        private void on_address_activated () {
+            // Opens the Stream Address manager; the action is disabled while
+            // streaming, so this is a no-op mid-stream.
+            this.application.activate_action ("preferences", null);
+        }
+
+        // Shows the active address label (or its URL) on the main window.
+        private void update_address_row () {
+            string label = AddressBook.active_label (this.settings);
+            this.address_row.subtitle = label != "" ? label : _("No address");
+        }
+
         public void toggle_stream () {
             if (this.streamer.is_active) {
                 // Pausing ends the stream gracefully with an end of stream.
@@ -381,16 +399,12 @@ namespace Linto {
             DebugLog.get_default ().new_session ();
             this.log_network_checks ();
 
-            // Free the preview pipeline so the device is available to stream.
-            this.audio_monitor.stop ();
-            // Re-resolve the device on every (re)build so the stream survives
-            // an unplug/replug of the input.
-            string id = device_identifier;
+            // The capture pipeline keeps running and already holds the mono
+            // input, so streaming just bridges to it; the PipeWire node is not
+            // recreated on start or pause.
+            this.connect_failed = false;
             this.streamer.start (() => {
-                var device = this.audio_monitor.find_device (id);
-                return (device != null)
-                    ? AudioMonitor.create_source (device)
-                    : null;
+                return this.audio_monitor.create_stream_source ();
             }, url);
         }
 
@@ -404,13 +418,18 @@ namespace Linto {
                     this.stream_button.add_css_class ("destructive-action");
                     this.device_row.sensitive = false;
                     // The address cannot be changed mid-stream.
+                    this.address_row.sensitive = false;
                     this.set_prefs_enabled (false);
                     string lead = protocol_lead (this.active_url);
+                    if (state == StreamState.STREAMING) {
+                        this.connect_failed = false;
+                    }
                     if (state == StreamState.CONNECTING) {
                         this.streaming_expander.subtitle = lead + _("Connecting…");
                     } else if (state == StreamState.RECONNECTING) {
-                        this.streaming_expander.subtitle =
-                            lead + _("Reconnecting…");
+                        this.streaming_expander.subtitle = this.connect_failed
+                            ? lead + _("Cannot connect, check the address")
+                            : lead + _("Reconnecting…");
                     }
                     break;
                 case StreamState.IDLE:
@@ -419,15 +438,26 @@ namespace Linto {
                     this.stream_button.add_css_class ("suggested-action");
                     this.device_row.sensitive =
                         this.audio_monitor.devices.length > 0;
+                    this.address_row.sensitive = true;
+                    this.connect_failed = false;
                     this.set_prefs_enabled (true);
                     // Persist the final totals for this URL.
                     this.stats_store.flush ();
-                    // Statistics stay on screen; they are never reset.
-                    // Resume the preview level meter.
-                    this.audio_monitor.select (this.device_row.selected);
+                    // Statistics stay on screen; they are never reset. The VU
+                    // meter keeps running from the always-on capture pipeline.
                     break;
             }
             this.push_status ();
+        }
+
+        // The initial connection could not be established (typically a wrong or
+        // expired address). Warn the user; the streamer keeps retrying.
+        private void on_connection_error (string message) {
+            this.connect_failed = true;
+            this.toast (message);
+            this.streaming_expander.subtitle =
+                protocol_lead (this.active_url)
+                + _("Cannot connect, check the address");
         }
 
         private void on_stream_stats (int64 elapsed, uint64 bytes,

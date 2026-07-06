@@ -35,6 +35,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.4" date="2026-07-06">
+      <description>
+        <p>Adds several saved stream addresses with labels, so you can pick
+          which one to stream to (the active one is shown on the main window).
+          The audio input is now captured as a single mono channel and stays
+          open, so it is no longer recreated when streaming starts or pauses.
+          Shows a clear message when the address cannot be reached, and opens
+          the address list from the main window instead of the menu.</p>
+      </description>
+    </release>
     <release version="1.0.3" date="2026-07-03">
       <description>
         <p>Adds a Debug Mode dialog that records a per-session log file (with the

@@ -26,22 +26,26 @@ namespace Linto {
         RECONNECTING
     }
 
-    // Supplies a fresh source element for the target device on each (re)build,
-    // or null when the device is currently unavailable. Re-resolving the device
-    // each time lets streaming survive an unplug/replug.
+    // Supplies a fresh source element on each (re)build, or null when the
+    // input is currently unavailable. It returns a proxysrc bridged to the
+    // always-on capture pipeline, so a reconnect never reopens the device.
     public delegate Gst.Element? SourceProvider ();
 
-    // Streams a selected audio input to a LinTO SRT endpoint and keeps the
-    // session alive across transient failures by reconnecting with backoff:
-    //   <source> ! audioconvert ! tee
-    //     tee. ! queue ! level ! fakesink            (VU meter tap)
-    //     tee. ! queue ! audioconvert ! audioresample ! rate=16000,channels=1
-    //            ! opusenc ! mpegtsmux ! rtpmp2tpay ! srtsink
+    // Streams the captured audio to a LinTO endpoint and keeps the session
+    // alive across transient failures by reconnecting with backoff:
+    //   proxysrc ! queue ! audioconvert ! audioresample
+    //     ! rate=16000,channels=1 ! opusenc ! mpegtsmux ! rtpmp2tpay ! srtsink
+    // The mono input comes from the persistent capture pipeline through a
+    // proxysink/proxysrc bridge, so streaming never opens the device itself
+    // and the PipeWire node is untouched on start and pause.
     public class Streamer : Object {
-        public signal void level (double peak);
         public signal void stats (int64 elapsed_seconds, uint64 bytes_sent,
             uint64 packets_sent, double bitrate_kbps);
         public signal void state_changed (StreamState state, string? detail);
+        // Emitted once per session when the initial connection cannot be
+        // established (typically a wrong or expired address). The streamer
+        // keeps retrying, but success is unlikely without a fix.
+        public signal void connection_error (string message);
 
         public StreamState state { get; private set; default = StreamState.IDLE; }
         public bool is_active { get { return this.state != StreamState.IDLE; } }
@@ -71,6 +75,13 @@ namespace Linto {
         // Set while a user-requested EOS shutdown is in flight, so the EOS bus
         // message ends the session cleanly instead of triggering a reconnect.
         private bool finishing = false;
+        // True once data has flowed at least once this session. Distinguishes a
+        // never-connected session (likely a bad address) from a transient drop
+        // of an established stream.
+        private bool ever_streamed = false;
+        // Set once the connection_error signal has been emitted this session,
+        // so the reconnect loop does not repeat the message on every attempt.
+        private bool reported_connect_error = false;
 
         // Elapsed time of the current run (start to stop, spanning reconnects).
         private Timer? session_timer = null;
@@ -101,6 +112,8 @@ namespace Linto {
             this.last_progress_bytes = 0;
             this.idle_ticks = 0;
             this.reconnect_attempt = 0;
+            this.ever_streamed = false;
+            this.reported_connect_error = false;
             this.session_timer = new Timer ();
 
             var dbg = DebugLog.get_default ();
@@ -126,7 +139,6 @@ namespace Linto {
             if (was_active) {
                 this.change_state (StreamState.IDLE, null);
             }
-            this.level (0.0);
         }
 
         // Ends the session gracefully: injects EOS so the muxer flushes and the
@@ -166,6 +178,9 @@ namespace Linto {
         }
 
         private void change_state (StreamState s, string? detail) {
+            if (s == StreamState.STREAMING) {
+                this.ever_streamed = true;
+            }
             this.state = s;
             DebugLog.get_default ().log ("state",
                 state_name (s) + (detail != null ? " (" + detail + ")" : ""));
@@ -220,29 +235,12 @@ namespace Linto {
                     _("The audio input device is unavailable."));
             }
 
-            var convert = make_element ("audioconvert");
-            var tee = make_element ("tee");
-            var vqueue = make_element ("queue");
-            var level_element = make_element ("level");
-            var vsink = make_element ("fakesink");
             var squeue = make_element ("queue");
 
-            LevelMeter.configure (level_element);
-            ((dynamic Gst.Element) vsink).sync = false;
-
             var pipe = new Gst.Pipeline (null);
-            pipe.add_many (src, convert, tee, vqueue, level_element, vsink,
-                squeue);
+            pipe.add_many (src, squeue);
 
-            if (!src.link_many (convert, tee)) {
-                throw new IOError.FAILED (
-                    _("Could not link the audio capture chain."));
-            }
-            if (!tee.link (vqueue) || !vqueue.link_many (level_element, vsink)) {
-                throw new IOError.FAILED (
-                    _("Could not link the level metering branch."));
-            }
-            if (!tee.link (squeue)) {
+            if (!src.link (squeue)) {
                 throw new IOError.FAILED (
                     _("Could not link the streaming branch."));
             }
@@ -368,7 +366,6 @@ namespace Linto {
                 return;
             }
             this.teardown_pipeline ();
-            this.level (0.0);
             this.schedule_reconnect (detail);
         }
 
@@ -378,6 +375,16 @@ namespace Linto {
             }
             this.cancel_reconnect ();
             this.change_state (StreamState.RECONNECTING, detail);
+
+            // A session that has never carried data is almost certainly a bad
+            // or expired address. Tell the user once; keep retrying regardless.
+            if (!this.ever_streamed && !this.reported_connect_error) {
+                this.reported_connect_error = true;
+                this.connection_error (
+                    _("Could not connect to the server. The stream address may "
+                    + "be wrong or expired. Still retrying, but it is unlikely "
+                    + "to succeed until the address is fixed."));
+            }
 
             int shift = int.min (this.reconnect_attempt, 16);
             int backoff = int.min (1000 << shift, MAX_BACKOFF_MS);
@@ -472,11 +479,6 @@ namespace Linto {
         }
 
         private bool on_bus_message (Gst.Bus bus, Gst.Message message) {
-            double peak = LevelMeter.peak_from_message (message);
-            if (peak >= 0.0) {
-                this.level (peak);
-                return Source.CONTINUE;
-            }
             switch (message.type) {
                 case Gst.MessageType.ERROR:
                     Error err;

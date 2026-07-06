@@ -29,11 +29,16 @@ namespace Linto {
         public signal void devices_changed ();
 
         public GenericArray<Gst.Device> devices { get; private set; }
+        // The capture tap the streamer bridges to (proxysink), so streaming
+        // never opens its own input and the PipeWire node stays put.
+        public Gst.Element? proxy_sink { get; private set; default = null; }
 
         private Gst.DeviceMonitor monitor;
         private uint monitor_watch_id = 0;
         private Gst.Pipeline? pipeline = null;
         private uint bus_watch_id = 0;
+        private uint current_index = 0;
+        private uint retry_id = 0;
 
         construct {
             this.devices = new GenericArray<Gst.Device> ();
@@ -53,6 +58,10 @@ namespace Linto {
             if (this.monitor_watch_id != 0) {
                 Source.remove (this.monitor_watch_id);
                 this.monitor_watch_id = 0;
+            }
+            if (this.retry_id != 0) {
+                Source.remove (this.retry_id);
+                this.retry_id = 0;
             }
             this.stop_pipeline ();
             this.monitor.stop ();
@@ -124,10 +133,16 @@ namespace Linto {
             return src;
         }
 
-        // Builds and starts a monitoring pipeline for the device at the given
-        // index. Passing an out-of-range index simply stops monitoring.
+        // Builds and starts the persistent capture pipeline for the device at
+        // the given index. It stays running while streaming, so the PipeWire
+        // node is created once and is not torn down on start or pause:
+        //   pipewiresrc(LinTO) ! channels=1 ! audioconvert ! tee
+        //     tee. ! queue ! level ! fakesink   (VU meter, always on)
+        //     tee. ! queue ! proxysink          (tap the streamer bridges to)
+        // Passing an out-of-range index simply stops capturing.
         public void select (uint index) {
             this.stop_pipeline ();
+            this.current_index = index;
 
             if (index >= this.devices.length) {
                 this.level (0.0);
@@ -136,25 +151,44 @@ namespace Linto {
 
             var device = this.devices.get ((int) index);
             var src = create_source (device);
+            var caps = Gst.ElementFactory.make ("capsfilter", null);
             var convert = Gst.ElementFactory.make ("audioconvert", null);
+            var tee = Gst.ElementFactory.make ("tee", null);
+            var vqueue = Gst.ElementFactory.make ("queue", null);
             var level_element = Gst.ElementFactory.make ("level", null);
-            var sink = Gst.ElementFactory.make ("fakesink", null);
+            var vsink = Gst.ElementFactory.make ("fakesink", null);
+            var squeue = Gst.ElementFactory.make ("queue", null);
+            var proxy = Gst.ElementFactory.make ("proxysink", null);
 
-            if (src == null || convert == null ||
-                level_element == null || sink == null) {
-                warning ("Could not create the audio monitoring elements.");
+            if (src == null || caps == null || convert == null || tee == null ||
+                vqueue == null || level_element == null || vsink == null ||
+                squeue == null || proxy == null) {
+                warning ("Could not create the audio capture elements.");
                 return;
             }
 
+            // Capture a single mono channel, so the PipeWire "LinTO" node is
+            // mono and its format stays the same whether or not we are
+            // streaming.
+            ((dynamic Gst.Element) caps).caps =
+                Gst.Caps.from_string ("audio/x-raw,channels=1");
             LevelMeter.configure (level_element);
+            ((dynamic Gst.Element) vsink).sync = false;
 
-            dynamic Gst.Element sink_dyn = sink;
-            sink_dyn.sync = false;
-
-            var pipe = new Gst.Pipeline ("audio-monitor");
-            pipe.add_many (src, convert, level_element, sink);
-            if (!src.link_many (convert, level_element, sink)) {
-                warning ("Could not link the audio monitoring pipeline.");
+            var pipe = new Gst.Pipeline ("audio-capture");
+            pipe.add_many (src, caps, convert, tee, vqueue, level_element,
+                vsink, squeue, proxy);
+            if (!src.link_many (caps, convert, tee)) {
+                warning ("Could not link the audio capture chain.");
+                return;
+            }
+            if (!tee.link (vqueue) ||
+                !vqueue.link_many (level_element, vsink)) {
+                warning ("Could not link the level metering branch.");
+                return;
+            }
+            if (!tee.link (squeue) || !squeue.link (proxy)) {
+                warning ("Could not link the stream tap.");
                 return;
             }
 
@@ -164,6 +198,22 @@ namespace Linto {
 
             pipe.set_state (Gst.State.PLAYING);
             this.pipeline = pipe;
+            this.proxy_sink = proxy;
+        }
+
+        // Creates a proxysrc bridged to the capture's proxysink, so the
+        // streamer consumes the already-open mono input without opening (and
+        // recreating) the PipeWire node itself. Null when capture is not up.
+        public Gst.Element? create_stream_source () {
+            if (this.proxy_sink == null) {
+                return null;
+            }
+            var src = Gst.ElementFactory.make ("proxysrc", null);
+            if (src == null) {
+                return null;
+            }
+            ((dynamic Gst.Element) src).proxysink = this.proxy_sink;
+            return src;
         }
 
         public void stop () {
@@ -179,7 +229,23 @@ namespace Linto {
                 this.pipeline.set_state (Gst.State.NULL);
                 this.pipeline = null;
             }
+            this.proxy_sink = null;
             this.level (0.0);
+        }
+
+        // Rebuilds capture for the current device after a transient error, for
+        // example an input being unplugged and replugged.
+        private void schedule_retry () {
+            this.stop_pipeline ();
+            if (this.retry_id != 0) {
+                return;
+            }
+            this.retry_id = Timeout.add_seconds (2, () => {
+                this.retry_id = 0;
+                this.reload_devices ();
+                this.select (this.current_index);
+                return Source.REMOVE;
+            });
         }
 
         private bool on_bus_message (Gst.Bus bus, Gst.Message message) {
@@ -190,8 +256,8 @@ namespace Linto {
                 Error err;
                 string debug;
                 message.parse_error (out err, out debug);
-                warning ("Audio monitor error: %s", err.message);
-                this.stop_pipeline ();
+                warning ("Audio capture error: %s", err.message);
+                this.schedule_retry ();
             }
             return Source.CONTINUE;
         }

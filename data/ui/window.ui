@@ -5,10 +5,6 @@
   <menu id="primary_menu">
     <section>
       <item>
-        <attribute name="label" translatable="yes">_Stream Address</attribute>
-        <attribute name="action">app.preferences</attribute>
-      </item>
-      <item>
         <attribute name="label" translatable="yes">Stream _Controller</attribute>
         <attribute name="action">app.stream-controller</attribute>
       </item>
@@ -60,6 +56,19 @@
               <object class="AdwPreferencesPage">
                 <child>
                   <object class="AdwPreferencesGroup">
+                    <child>
+                      <object class="AdwActionRow" id="address_row">
+                        <property name="title" translatable="yes">Address</property>
+                        <property name="subtitle" translatable="yes">No address</property>
+                        <property name="activatable">true</property>
+                        <signal name="activated" handler="on_address_activated"/>
+                        <child type="suffix">
+                          <object class="GtkImage">
+                            <property name="icon-name">go-next-symbolic</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
                     <child>
                       <object class="AdwComboRow" id="device_row">
                         <property name="title" translatable="yes">Input device</property>

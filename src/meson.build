@@ -6,6 +6,8 @@ gnome_linto_sources = [
   'application.vala',
   'window.vala',
   'preferences.vala',
+  'address-book.vala',
+  'address-editor.vala',
   'stream-controller.vala',
   'debug-dialog.vala',
   'debug-log.vala',
