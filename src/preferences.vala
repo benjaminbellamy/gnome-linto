@@ -142,9 +142,13 @@ namespace Linto {
                 int index = i;
                 string url = entry.url;
 
+                // Escape the text: AdwActionRow parses its title and subtitle as
+                // Pango markup, and SRT URLs contain "&" (for example
+                // "&mode=caller"), which would otherwise break rendering.
                 var row = new Adw.ActionRow () {
-                    title = entry.label != "" ? entry.label : entry.url,
-                    subtitle = entry.url
+                    title = Markup.escape_text (
+                        entry.label != "" ? entry.label : entry.url),
+                    subtitle = Markup.escape_text (entry.url)
                 };
 
                 var radio = new Gtk.CheckButton () {

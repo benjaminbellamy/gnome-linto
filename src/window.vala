@@ -91,6 +91,15 @@ namespace Linto {
         // so the streaming summary keeps showing the error while it retries.
         private bool connect_failed = false;
 
+        // Short cool-down after stopping, so the same stream cannot be
+        // restarted immediately (which tends to collide with the still-open
+        // session on the server). It applies only to the URL that was just
+        // stopped; selecting another address starts without waiting.
+        private const int COOLDOWN_SECONDS = 5;
+        private string cooldown_url = "";
+        private int64 cooldown_deadline_us = 0;
+        private uint cooldown_timer_id = 0;
+
         public ControlServer control_server;
         // Latest totals, mirrored to the control server status.
         private int64 status_elapsed = 0;
@@ -114,6 +123,9 @@ namespace Linto {
             });
             this.settings.changed["srt-url"].connect (this.update_address_row);
             this.settings.changed["addresses"].connect (this.update_address_row);
+            // Switching to a different address clears the countdown; switching
+            // back to the cooling-down one shows the remaining time again.
+            this.settings.changed["srt-url"].connect (this.update_stream_button);
 
             this.audio_monitor = new AudioMonitor ();
             this.audio_monitor.level.connect ((peak) => {
@@ -372,7 +384,70 @@ namespace Linto {
         // Shows the active address label (or its URL) on the main window.
         private void update_address_row () {
             string label = AddressBook.active_label (this.settings);
-            this.address_row.subtitle = label != "" ? label : _("No address");
+            // Escape it: the row subtitle is Pango markup and a URL fallback can
+            // contain "&" (SRT), which would otherwise break rendering.
+            this.address_row.subtitle = label != ""
+                ? Markup.escape_text (label)
+                : _("No address");
+        }
+
+        // Begins the restart cool-down for the given URL and refreshes the
+        // start button so it shows the countdown right away.
+        private void start_cooldown (string url) {
+            if (url == "") {
+                return;
+            }
+            this.cooldown_url = url;
+            this.cooldown_deadline_us =
+                GLib.get_monotonic_time () + COOLDOWN_SECONDS * 1000000;
+            if (this.cooldown_timer_id == 0) {
+                this.cooldown_timer_id =
+                    Timeout.add (250, this.on_cooldown_tick);
+            }
+            this.update_stream_button ();
+        }
+
+        private bool on_cooldown_tick () {
+            if (this.cooldown_remaining_seconds () <= 0) {
+                this.cooldown_deadline_us = 0;
+                this.cooldown_url = "";
+                this.cooldown_timer_id = 0;
+                this.update_stream_button ();
+                return Source.REMOVE;
+            }
+            this.update_stream_button ();
+            return Source.CONTINUE;
+        }
+
+        // Whole seconds left in the cool-down, rounded up, or 0 when none.
+        private int cooldown_remaining_seconds () {
+            if (this.cooldown_deadline_us == 0) {
+                return 0;
+            }
+            int64 diff = this.cooldown_deadline_us - GLib.get_monotonic_time ();
+            if (diff <= 0) {
+                return 0;
+            }
+            return (int) ((diff + 999999) / 1000000);
+        }
+
+        // Sets the start button label and sensitivity for the current cool-down
+        // and selected address. Does nothing while a stream is active, where
+        // the button shows Pause.
+        private void update_stream_button () {
+            if (this.streamer.is_active) {
+                return;
+            }
+            int remaining = this.cooldown_remaining_seconds ();
+            string selected = this.settings.get_string ("srt-url").strip ();
+            if (remaining > 0 && selected == this.cooldown_url) {
+                this.stream_button.sensitive = false;
+                this.stream_button.label =
+                    _("Restart in %d s").printf (remaining);
+            } else {
+                this.stream_button.sensitive = true;
+                this.stream_button.label = _("Start streaming");
+            }
         }
 
         public void toggle_stream () {
@@ -391,6 +466,16 @@ namespace Linto {
             string? device_identifier = this.selected_device_id ();
             if (device_identifier == null) {
                 this.toast (_("No audio input device is available."));
+                return;
+            }
+
+            // Keep the same stream from restarting during its cool-down. A
+            // different address is not affected.
+            int remaining = this.cooldown_remaining_seconds ();
+            if (remaining > 0 && url == this.cooldown_url) {
+                this.toast (
+                    _("Please wait %d s before restarting this stream.").printf (
+                        remaining));
                 return;
             }
 
@@ -430,6 +515,7 @@ namespace Linto {
                 case StreamState.STREAMING:
                 case StreamState.RECONNECTING:
                     this.stream_button.label = _("Pause");
+                    this.stream_button.sensitive = true;
                     this.stream_button.remove_css_class ("suggested-action");
                     this.stream_button.add_css_class ("destructive-action");
                     this.device_row.sensitive = false;
@@ -449,7 +535,6 @@ namespace Linto {
                     }
                     break;
                 case StreamState.IDLE:
-                    this.stream_button.label = _("Start streaming");
                     this.stream_button.remove_css_class ("destructive-action");
                     this.stream_button.add_css_class ("suggested-action");
                     this.device_row.sensitive =
@@ -457,6 +542,9 @@ namespace Linto {
                     this.address_row.sensitive = true;
                     this.connect_failed = false;
                     this.set_prefs_enabled (true);
+                    // Start the cool-down for the stream that just stopped; it
+                    // sets the button label (a countdown) and disables it.
+                    this.start_cooldown (this.active_url);
                     // Persist the final totals for this URL.
                     this.stats_store.flush ();
                     // Statistics stay on screen; they are never reset. The VU

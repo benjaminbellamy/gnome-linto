@@ -35,6 +35,15 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.6" date="2026-07-07">
+      <description>
+        <p>Adds a paste button to the stream address field, enabled only when
+          the clipboard holds a valid address. The saved address list now shows
+          SRT addresses correctly. After stopping a stream, the same address
+          cannot be restarted for a few seconds, with a countdown on the button;
+          switching to another address starts right away.</p>
+      </description>
+    </release>
     <release version="1.0.5" date="2026-07-07">
       <description>
         <p>The network checks now test IPv4 and IPv6 separately, showing the

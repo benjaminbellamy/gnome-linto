@@ -45,6 +45,17 @@
                         <property name="title" translatable="yes">Stream Address</property>
                         <property name="input-purpose">url</property>
                         <signal name="entry-activated" handler="on_save"/>
+                        <child type="prefix">
+                          <object class="GtkButton" id="paste_button">
+                            <property name="icon-name">edit-paste-symbolic</property>
+                            <property name="valign">center</property>
+                            <property name="tooltip-text" translatable="yes">Paste the address from the clipboard</property>
+                            <signal name="clicked" handler="on_paste"/>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
                       </object>
                     </child>
                   </object>
