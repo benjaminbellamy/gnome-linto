@@ -39,14 +39,25 @@ linto_iface_for_ip (const char *ip, gboolean *is_up)
 
   for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
     {
-      char host[INET_ADDRSTRLEN];
-      struct sockaddr_in *sin;
+      char host[INET6_ADDRSTRLEN];
 
-      if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_INET)
+      if (ifa->ifa_addr == NULL)
         continue;
 
-      sin = (struct sockaddr_in *) ifa->ifa_addr;
-      if (inet_ntop (AF_INET, &sin->sin_addr, host, sizeof (host)) == NULL)
+      if (ifa->ifa_addr->sa_family == AF_INET)
+        {
+          struct sockaddr_in *sin = (struct sockaddr_in *) ifa->ifa_addr;
+          if (inet_ntop (AF_INET, &sin->sin_addr, host, sizeof (host)) == NULL)
+            continue;
+        }
+      else if (ifa->ifa_addr->sa_family == AF_INET6)
+        {
+          struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *) ifa->ifa_addr;
+          if (inet_ntop (AF_INET6, &sin6->sin6_addr, host,
+                         sizeof (host)) == NULL)
+            continue;
+        }
+      else
         continue;
 
       if (g_strcmp0 (host, ip) == 0)

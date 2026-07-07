@@ -22,17 +22,25 @@ namespace Linto {
     private enum CheckStatus {
         CHECKING,
         OK,
-        BAD
+        BAD,
+        // Not applicable / not configured (for example no IPv6 on the host).
+        // Shown to the user but not counted as a failure, since the LinTO
+        // server is IPv4 only and IPv6 being absent does not block streaming.
+        NEUTRAL
     }
 
     [GtkTemplate (ui = "/ai/linto/gnomelinto/ui/window.ui")]
     public class Window : Adw.ApplicationWindow {
         [GtkChild] private unowned Adw.ActionRow adapter_row;
         [GtkChild] private unowned Gtk.Image adapter_icon;
-        [GtkChild] private unowned Adw.ActionRow local_ip_row;
-        [GtkChild] private unowned Gtk.Image local_ip_icon;
-        [GtkChild] private unowned Adw.ActionRow public_ip_row;
-        [GtkChild] private unowned Gtk.Image public_ip_icon;
+        [GtkChild] private unowned Adw.ActionRow local_ipv4_row;
+        [GtkChild] private unowned Gtk.Image local_ipv4_icon;
+        [GtkChild] private unowned Adw.ActionRow local_ipv6_row;
+        [GtkChild] private unowned Gtk.Image local_ipv6_icon;
+        [GtkChild] private unowned Adw.ActionRow public_ipv4_row;
+        [GtkChild] private unowned Gtk.Image public_ipv4_icon;
+        [GtkChild] private unowned Adw.ActionRow public_ipv6_row;
+        [GtkChild] private unowned Gtk.Image public_ipv6_icon;
         [GtkChild] private unowned Adw.ActionRow internet_row;
         [GtkChild] private unowned Gtk.Image internet_icon;
         [GtkChild] private unowned Adw.ActionRow website_row;
@@ -48,15 +56,17 @@ namespace Linto {
         [GtkChild] private unowned Gtk.Button refresh_button;
 
         private const int CHECK_ADAPTER = 0;
-        private const int CHECK_LOCAL_IP = 1;
-        private const int CHECK_PUBLIC_IP = 2;
-        private const int CHECK_INTERNET = 3;
-        private const int CHECK_WEBSITE = 4;
-        private const int CHECK_LATENCY = 5;
-        private const int CHECK_BANDWIDTH = 6;
+        private const int CHECK_LOCAL_IPV4 = 1;
+        private const int CHECK_LOCAL_IPV6 = 2;
+        private const int CHECK_PUBLIC_IPV4 = 3;
+        private const int CHECK_PUBLIC_IPV6 = 4;
+        private const int CHECK_INTERNET = 5;
+        private const int CHECK_WEBSITE = 6;
+        private const int CHECK_LATENCY = 7;
+        private const int CHECK_BANDWIDTH = 8;
         // Minimum upload the check treats as sufficient to stream (Mbit/s).
         private const double MIN_UPLOAD_MBPS = 1.0;
-        private CheckStatus[] check_statuses = new CheckStatus[7];
+        private CheckStatus[] check_statuses = new CheckStatus[9];
         [GtkChild] private unowned Adw.ActionRow address_row;
         [GtkChild] private unowned Adw.ComboRow device_row;
         [GtkChild] private unowned Gtk.LevelBar level_bar;
@@ -178,7 +188,8 @@ namespace Linto {
 
         private bool network_all_ok () {
             foreach (var status in this.check_statuses) {
-                if (status != CheckStatus.OK) {
+                // NEUTRAL (for example no IPv6) does not count as a failure.
+                if (status != CheckStatus.OK && status != CheckStatus.NEUTRAL) {
                     return false;
                 }
             }
@@ -194,10 +205,14 @@ namespace Linto {
             }
             log_check (dbg, "adapter", this.adapter_row.subtitle,
                 this.check_statuses[CHECK_ADAPTER]);
-            log_check (dbg, "local IP", this.local_ip_row.subtitle,
-                this.check_statuses[CHECK_LOCAL_IP]);
-            log_check (dbg, "public IP", this.public_ip_row.subtitle,
-                this.check_statuses[CHECK_PUBLIC_IP]);
+            log_check (dbg, "local IPv4", this.local_ipv4_row.subtitle,
+                this.check_statuses[CHECK_LOCAL_IPV4]);
+            log_check (dbg, "local IPv6", this.local_ipv6_row.subtitle,
+                this.check_statuses[CHECK_LOCAL_IPV6]);
+            log_check (dbg, "public IPv4", this.public_ipv4_row.subtitle,
+                this.check_statuses[CHECK_PUBLIC_IPV4]);
+            log_check (dbg, "public IPv6", this.public_ipv6_row.subtitle,
+                this.check_statuses[CHECK_PUBLIC_IPV6]);
             log_check (dbg, "internet", this.internet_row.subtitle,
                 this.check_statuses[CHECK_INTERNET]);
             log_check (dbg, "server", this.website_row.subtitle,
@@ -214,6 +229,7 @@ namespace Linto {
             switch (status) {
                 case CheckStatus.OK: mark = "OK"; break;
                 case CheckStatus.BAD: mark = "BAD"; break;
+                case CheckStatus.NEUTRAL: mark = "n/a"; break;
                 default: mark = "checking"; break;
             }
             dbg.log ("network",
@@ -600,21 +616,29 @@ namespace Linto {
             this.refresh_button.sensitive = false;
 
             this.apply_status (CHECK_ADAPTER, this.adapter_icon, CheckStatus.CHECKING);
-            this.apply_status (CHECK_LOCAL_IP, this.local_ip_icon, CheckStatus.CHECKING);
-            this.apply_status (CHECK_PUBLIC_IP, this.public_ip_icon, CheckStatus.CHECKING);
+            this.apply_status (CHECK_LOCAL_IPV4, this.local_ipv4_icon,
+                CheckStatus.CHECKING);
+            this.apply_status (CHECK_LOCAL_IPV6, this.local_ipv6_icon,
+                CheckStatus.CHECKING);
+            this.apply_status (CHECK_PUBLIC_IPV4, this.public_ipv4_icon,
+                CheckStatus.CHECKING);
+            this.apply_status (CHECK_PUBLIC_IPV6, this.public_ipv6_icon,
+                CheckStatus.CHECKING);
             this.apply_status (CHECK_INTERNET, this.internet_icon, CheckStatus.CHECKING);
             this.apply_status (CHECK_WEBSITE, this.website_icon, CheckStatus.CHECKING);
             this.apply_status (CHECK_LATENCY, this.latency_icon, CheckStatus.CHECKING);
 
-            // Local IP and adapter are resolved together and quickly.
+            // Local IP (both families) and the adapter are resolved together
+            // and quickly.
             update_local_and_adapter ();
 
             // Network round-trips run concurrently.
             this.check_internet.begin ();
             this.check_website.begin ();
             this.check_latency.begin ();
-            this.check_public_ip.begin ((obj, res) => {
-                this.check_public_ip.end (res);
+            this.check_public_ipv6.begin ();
+            this.check_public_ipv4.begin ((obj, res) => {
+                this.check_public_ipv4.end (res);
                 this.refresh_button.sensitive = true;
             });
         }
@@ -659,15 +683,38 @@ namespace Linto {
         }
 
         private void update_local_and_adapter () {
-            string? local_ip = get_local_ip ();
+            string? local_ipv4 = get_local_ip (SocketFamily.IPV4, "8.8.8.8");
+            string? local_ipv6 =
+                get_local_ip (SocketFamily.IPV6, "2001:4860:4860::8888");
 
-            if (local_ip != null) {
-                this.local_ip_row.subtitle = local_ip;
-                this.apply_status (CHECK_LOCAL_IP, this.local_ip_icon,
+            // The LinTO server is IPv4 only, so a missing IPv4 route is a real
+            // problem and is flagged; a missing IPv6 route is not.
+            if (local_ipv4 != null) {
+                this.local_ipv4_row.subtitle = local_ipv4;
+                this.apply_status (CHECK_LOCAL_IPV4, this.local_ipv4_icon,
                     CheckStatus.OK);
+            } else {
+                this.local_ipv4_row.subtitle = _("Unavailable");
+                this.apply_status (CHECK_LOCAL_IPV4, this.local_ipv4_icon,
+                    CheckStatus.BAD);
+            }
 
+            if (local_ipv6 != null) {
+                this.local_ipv6_row.subtitle = local_ipv6;
+                this.apply_status (CHECK_LOCAL_IPV6, this.local_ipv6_icon,
+                    CheckStatus.OK);
+            } else {
+                this.local_ipv6_row.subtitle = _("Unavailable");
+                this.apply_status (CHECK_LOCAL_IPV6, this.local_ipv6_icon,
+                    CheckStatus.NEUTRAL);
+            }
+
+            // Resolve the adapter from whichever local address exists,
+            // preferring IPv4 so the name matches the streaming path.
+            string? adapter_ip = local_ipv4 ?? local_ipv6;
+            if (adapter_ip != null) {
                 bool is_up;
-                string? name = NetInfo.iface_for_ip (local_ip, out is_up);
+                string? name = NetInfo.iface_for_ip (adapter_ip, out is_up);
                 if (name != null) {
                     this.adapter_row.subtitle = is_up
                         ? _("%s (up)").printf (name)
@@ -680,23 +727,21 @@ namespace Linto {
                         CheckStatus.BAD);
                 }
             } else {
-                this.local_ip_row.subtitle = _("Unavailable");
-                this.apply_status (CHECK_LOCAL_IP, this.local_ip_icon,
-                    CheckStatus.BAD);
                 this.adapter_row.subtitle = _("No active adapter");
                 this.apply_status (CHECK_ADAPTER, this.adapter_icon,
                     CheckStatus.BAD);
             }
         }
 
-        private static string? get_local_ip () {
+        private static string? get_local_ip (SocketFamily family,
+            string probe_address) {
             try {
-                var socket = new Socket (SocketFamily.IPV4, SocketType.DATAGRAM,
+                var socket = new Socket (family, SocketType.DATAGRAM,
                     SocketProtocol.UDP);
                 // A datagram connect sets the outbound route without sending
                 // any traffic, which reveals the local source address.
                 var target = new InetSocketAddress (
-                    new InetAddress.from_string ("8.8.8.8"), 80);
+                    new InetAddress.from_string (probe_address), 80);
                 socket.connect (target);
                 var local = socket.get_local_address () as InetSocketAddress;
                 socket.close ();
@@ -704,7 +749,8 @@ namespace Linto {
                     return local.address.to_string ();
                 }
             } catch (Error e) {
-                // No route to a public address (offline).
+                // No route to a public address in this family (offline or the
+                // family is not configured).
             }
             return null;
         }
@@ -748,28 +794,46 @@ namespace Linto {
                 ok ? CheckStatus.OK : CheckStatus.BAD);
         }
 
-        private async void check_public_ip () {
-            string? ip = yield fetch_public_ip ();
+        private async void check_public_ipv4 () {
+            // The LinTO server is IPv4 only, so no public IPv4 is flagged.
+            string? ip = yield fetch_public_ip ("api.ipify.org");
             if (ip != null) {
-                this.public_ip_row.subtitle = ip;
-                this.apply_status (CHECK_PUBLIC_IP, this.public_ip_icon,
+                this.public_ipv4_row.subtitle = ip;
+                this.apply_status (CHECK_PUBLIC_IPV4, this.public_ipv4_icon,
                     CheckStatus.OK);
             } else {
-                this.public_ip_row.subtitle = _("Unavailable");
-                this.apply_status (CHECK_PUBLIC_IP, this.public_ip_icon,
+                this.public_ipv4_row.subtitle = _("Unavailable");
+                this.apply_status (CHECK_PUBLIC_IPV4, this.public_ipv4_icon,
                     CheckStatus.BAD);
             }
         }
 
-        private async string? fetch_public_ip () {
+        private async void check_public_ipv6 () {
+            // No public IPv6 is not a failure; it is shown for information.
+            string? ip = yield fetch_public_ip ("api6.ipify.org");
+            if (ip != null) {
+                this.public_ipv6_row.subtitle = ip;
+                this.apply_status (CHECK_PUBLIC_IPV6, this.public_ipv6_icon,
+                    CheckStatus.OK);
+            } else {
+                this.public_ipv6_row.subtitle = _("Unavailable");
+                this.apply_status (CHECK_PUBLIC_IPV6, this.public_ipv6_icon,
+                    CheckStatus.NEUTRAL);
+            }
+        }
+
+        // Fetches the public IP as seen by the given ipify host. The host is
+        // family specific (api.ipify.org is IPv4 only, api6.ipify.org is IPv6
+        // only), so the returned address is in that family.
+        private async string? fetch_public_ip (string host) {
             var client = new SocketClient ();
             client.set_timeout (8);
             try {
                 var conn = yield client.connect_to_host_async (
-                    "api.ipify.org", 80, null);
+                    host, 80, null);
                 var request =
                     "GET / HTTP/1.1\r\n" +
-                    "Host: api.ipify.org\r\n" +
+                    "Host: " + host + "\r\n" +
                     "User-Agent: gnome-linto\r\n" +
                     "Connection: close\r\n\r\n";
                 yield conn.output_stream.write_all_async (
@@ -816,25 +880,40 @@ namespace Linto {
         private void update_network_summary () {
             int ok = 0;
             int checking = 0;
+            int applicable = 0;
+            int unavailable = 0;
             foreach (var status in this.check_statuses) {
                 if (status == CheckStatus.OK) {
                     ok++;
+                    applicable++;
                 } else if (status == CheckStatus.CHECKING) {
                     checking++;
+                    applicable++;
+                } else if (status == CheckStatus.BAD) {
+                    applicable++;
+                } else if (status == CheckStatus.NEUTRAL) {
+                    // NEUTRAL checks (for example no IPv6) are not failures, so
+                    // they stay out of the pass/fail ratio, but they are still
+                    // reported so the summary does not hide that they were run.
+                    unavailable++;
                 }
             }
             if (checking > 0) {
                 this.network_expander.subtitle = _("Checking…");
+            } else if (unavailable > 0) {
+                this.network_expander.subtitle =
+                    _("%d of %d checks OK, %d unavailable").printf (
+                        ok, applicable, unavailable);
             } else {
                 this.network_expander.subtitle =
-                    _("%d of %d checks OK").printf (ok,
-                        this.check_statuses.length);
+                    _("%d of %d checks OK").printf (ok, applicable);
             }
         }
 
         private static void set_status (Gtk.Image icon, CheckStatus status) {
             icon.remove_css_class ("success");
             icon.remove_css_class ("error");
+            icon.remove_css_class ("dim-label");
             switch (status) {
                 case CheckStatus.OK:
                     icon.icon_name = "object-select-symbolic";
@@ -843,6 +922,12 @@ namespace Linto {
                 case CheckStatus.BAD:
                     icon.icon_name = "process-stop-symbolic";
                     icon.add_css_class ("error");
+                    break;
+                case CheckStatus.NEUTRAL:
+                    // Present but not applicable (for example no IPv6): a muted
+                    // dash, neither a success nor a failure.
+                    icon.icon_name = "list-remove-symbolic";
+                    icon.add_css_class ("dim-label");
                     break;
                 default:
                     icon.icon_name = "content-loading-symbolic";

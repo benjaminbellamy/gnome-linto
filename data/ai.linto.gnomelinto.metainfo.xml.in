@@ -35,6 +35,14 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.5" date="2026-07-07">
+      <description>
+        <p>The network checks now test IPv4 and IPv6 separately, showing the
+          local and public address for each. A missing IPv4 route is flagged as
+          a problem (the LinTO server is IPv4 only), while a missing IPv6 route
+          is shown as unavailable without counting as a failure.</p>
+      </description>
+    </release>
     <release version="1.0.4" date="2026-07-06">
       <description>
         <p>Adds several saved stream addresses with labels, so you can pick

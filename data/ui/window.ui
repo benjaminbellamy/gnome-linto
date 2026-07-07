@@ -165,22 +165,44 @@
                           </object>
                         </child>
                         <child>
-                          <object class="AdwActionRow" id="local_ip_row">
-                            <property name="title" translatable="yes">Local IP address</property>
+                          <object class="AdwActionRow" id="local_ipv4_row">
+                            <property name="title" translatable="yes">Local IPv4 address</property>
                             <property name="subtitle" translatable="yes">Checking…</property>
                             <child type="suffix">
-                              <object class="GtkImage" id="local_ip_icon">
+                              <object class="GtkImage" id="local_ipv4_icon">
                                 <property name="icon-name">content-loading-symbolic</property>
                               </object>
                             </child>
                           </object>
                         </child>
                         <child>
-                          <object class="AdwActionRow" id="public_ip_row">
-                            <property name="title" translatable="yes">Public IP address</property>
+                          <object class="AdwActionRow" id="local_ipv6_row">
+                            <property name="title" translatable="yes">Local IPv6 address</property>
                             <property name="subtitle" translatable="yes">Checking…</property>
                             <child type="suffix">
-                              <object class="GtkImage" id="public_ip_icon">
+                              <object class="GtkImage" id="local_ipv6_icon">
+                                <property name="icon-name">content-loading-symbolic</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="public_ipv4_row">
+                            <property name="title" translatable="yes">Public IPv4 address</property>
+                            <property name="subtitle" translatable="yes">Checking…</property>
+                            <child type="suffix">
+                              <object class="GtkImage" id="public_ipv4_icon">
+                                <property name="icon-name">content-loading-symbolic</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow" id="public_ipv6_row">
+                            <property name="title" translatable="yes">Public IPv6 address</property>
+                            <property name="subtitle" translatable="yes">Checking…</property>
+                            <child type="suffix">
+                              <object class="GtkImage" id="public_ipv6_icon">
                                 <property name="icon-name">content-loading-symbolic</property>
                               </object>
                             </child>

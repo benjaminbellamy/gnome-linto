@@ -23,7 +23,7 @@ translation.
 Download and install the latest release in one line:
 
 ```
-curl -L -o /tmp/gnome-linto-1.0.4-x86_64.flatpak https://github.com/benjaminbellamy/gnome-linto/releases/download/v1.0.4/gnome-linto-1.0.4-x86_64.flatpak && flatpak install --user /tmp/gnome-linto-1.0.4-x86_64.flatpak
+curl -L -o /tmp/gnome-linto-1.0.5-x86_64.flatpak https://github.com/benjaminbellamy/gnome-linto/releases/download/v1.0.5/gnome-linto-1.0.5-x86_64.flatpak && flatpak install --user /tmp/gnome-linto-1.0.5-x86_64.flatpak
 ```
 
 Then run it:
