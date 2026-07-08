@@ -35,6 +35,20 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.7" date="2026-07-08">
+      <description>
+        <p>The stream now always sends a continuous audio signal (silence when
+          the input drops out), so a brief input gap no longer breaks the server
+          session, and a dropped connection waits at least 5 seconds before
+          reconnecting. You can switch the stream address while streaming (it
+          asks first, then stops the current stream and starts the new one), and
+          the address being streamed cannot be edited or removed until you stop.
+          Picking an address now applies it and closes the list. A new data rate
+          meter and a dBFS reading on the input level let you confirm audio is
+          really being sent. Deleting the last saved address now removes it for
+          good.</p>
+      </description>
+    </release>
     <release version="1.0.6" date="2026-07-07">
       <description>
         <p>Adds a paste button to the stream address field, enabled only when

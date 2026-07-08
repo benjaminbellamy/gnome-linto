@@ -66,7 +66,8 @@ namespace Linto {
         }
 
         private void on_preferences_action () {
-            var preferences = new Linto.Preferences ();
+            var preferences = new Linto.Preferences (
+                this.active_window as Linto.Window);
             preferences.present (this.active_window);
         }
 

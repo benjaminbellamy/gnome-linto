@@ -77,12 +77,28 @@
                     <child>
                       <object class="AdwActionRow" id="level_row">
                         <property name="title" translatable="yes">Input level</property>
+                        <property name="subtitle" translatable="yes">Silent</property>
                         <child type="suffix">
                           <object class="GtkLevelBar" id="level_bar">
                             <property name="valign">center</property>
                             <property name="width-request">200</property>
                             <property name="min-value">0</property>
                             <property name="max-value">1</property>
+                            <property name="mode">continuous</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow" id="sent_row">
+                        <property name="title" translatable="yes">Data rate</property>
+                        <property name="subtitle">0 B/s</property>
+                        <child type="suffix">
+                          <object class="GtkLevelBar" id="sent_bar">
+                            <property name="valign">center</property>
+                            <property name="width-request">200</property>
+                            <property name="min-value">0</property>
+                            <property name="max-value">20000</property>
                             <property name="mode">continuous</property>
                           </object>
                         </child>

@@ -38,8 +38,11 @@ namespace Linto {
                 result += Address () { label = label, url = url };
             }
             // Migrate a single URL saved before the address list existed, so an
-            // upgrade keeps the address the user had configured.
-            if (result.length == 0) {
+            // upgrade keeps the address the user had configured. Do this only
+            // once, while the addresses key has never been written: an empty
+            // list the user created by deleting every address must not
+            // resurrect a deleted address from srt-url.
+            if (result.length == 0 && settings.get_user_value ("addresses") == null) {
                 string legacy = settings.get_string ("srt-url").strip ();
                 if (legacy != "") {
                     result += Address () { label = _("Default"), url = legacy };
@@ -66,19 +69,24 @@ namespace Linto {
             settings.set_string ("srt-url", url.strip ());
         }
 
-        // The label to show for the active address: its label, or the URL when
-        // the label is empty, or an empty string when nothing is selected.
-        public string active_label (GLib.Settings settings) {
-            string active = selected_url (settings);
-            if (active == "") {
+        // The label to show for a saved URL: its label, or the URL itself when
+        // the label is empty, or an empty string for an empty URL.
+        public string label_for (GLib.Settings settings, string url) {
+            if (url == "") {
                 return "";
             }
             foreach (var e in load (settings)) {
-                if (e.url == active) {
+                if (e.url == url) {
                     return e.label != "" ? e.label : e.url;
                 }
             }
-            return active;
+            return url;
+        }
+
+        // The label to show for the active address: its label, or the URL when
+        // the label is empty, or an empty string when nothing is selected.
+        public string active_label (GLib.Settings settings) {
+            return label_for (settings, selected_url (settings));
         }
     }
 }

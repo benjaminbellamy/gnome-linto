@@ -28,6 +28,11 @@ namespace Linto {
         private unowned Adw.PreferencesGroup addresses_group;
 
         private GLib.Settings settings;
+        // The main window, used to detect an active stream and hand off a live
+        // address switch (confirm, then stop-and-restart). Null when opened
+        // without a window. A construct property so it is set before construct
+        // runs the first rebuild, which needs it to disable the active row.
+        public Window? window { private get; construct; }
         // The rows we added, so they can be cleared before a rebuild.
         private GenericArray<Gtk.Widget> rows = new GenericArray<Gtk.Widget> ();
         private Gtk.CheckButton? radio_group = null;
@@ -35,8 +40,8 @@ namespace Linto {
         // change the selection.
         private bool building = false;
 
-        public Preferences () {
-            Object ();
+        public Preferences (Window? window) {
+            Object (window: window);
         }
 
         construct {
@@ -73,6 +78,12 @@ namespace Linto {
                 return;
             }
             Address current = entries[index];
+            // Never edit the address that is streaming right now (the row's
+            // edit button is disabled too; this guards other callers).
+            if (this.window != null
+                && this.window.is_active_stream (current.url)) {
+                return;
+            }
             var editor = new AddressEditor (_("Edit address"),
                 current.label, current.url);
             editor.saved.connect ((label, url) => {
@@ -97,6 +108,12 @@ namespace Linto {
                 return;
             }
             string removed_url = list[index].url;
+            // Never remove the address that is streaming right now (the row's
+            // remove button is disabled too; this guards other callers).
+            if (this.window != null
+                && this.window.is_active_stream (removed_url)) {
+                return;
+            }
             Address[] next = {};
             for (int i = 0; i < list.length; i++) {
                 if (i != index) {
@@ -109,6 +126,22 @@ namespace Linto {
                 AddressBook.select (this.settings,
                     next.length > 0 ? next[0].url : "");
             }
+        }
+
+        // Closes the dialog once an address is picked, off the current signal
+        // so the row is not torn down from inside its own toggled handler.
+        private void close_after_select () {
+            Idle.add (() => {
+                this.close ();
+                return Source.REMOVE;
+            });
+        }
+
+        // Restores the radios to the persisted selection, used when a live
+        // switch is cancelled so the list stops showing the address the user
+        // backed out of.
+        public void reset_selection () {
+            this.rebuild ();
         }
 
         private void clear_rows () {
@@ -161,8 +194,21 @@ namespace Linto {
                 }
                 radio.active = (entry.url == active);
                 radio.toggled.connect (() => {
-                    if (!this.building && radio.active) {
+                    if (this.building || !radio.active) {
+                        return;
+                    }
+                    // While streaming, picking a different address is a live
+                    // switch: let the window confirm and restart, and do not
+                    // commit the selection here (it commits on confirm, or the
+                    // radios roll back on cancel).
+                    if (this.window != null && this.window.is_streaming ()
+                        && url != AddressBook.selected_url (this.settings)) {
+                        // The window closes this dialog on confirm, or rolls the
+                        // selection back on cancel.
+                        this.window.request_switch (url, this);
+                    } else {
                         AddressBook.select (this.settings, url);
+                        this.close_after_select ();
                     }
                 });
                 row.add_prefix (radio);
@@ -177,6 +223,13 @@ namespace Linto {
                 edit.clicked.connect (() => {
                     this.edit_entry (index);
                 });
+                // The address that is streaming right now cannot be edited;
+                // pause or switch first.
+                if (this.window != null
+                    && this.window.is_active_stream (entry.url)) {
+                    edit.sensitive = false;
+                    edit.tooltip_text = _("Stop streaming to edit this address");
+                }
                 row.add_suffix (edit);
 
                 var remove = new Gtk.Button.from_icon_name (
@@ -188,6 +241,14 @@ namespace Linto {
                 remove.clicked.connect (() => {
                     this.remove_entry (index);
                 });
+                // The address that is streaming right now cannot be removed;
+                // pause or switch first.
+                if (this.window != null
+                    && this.window.is_active_stream (entry.url)) {
+                    remove.sensitive = false;
+                    remove.tooltip_text =
+                        _("Stop streaming to remove this address");
+                }
                 row.add_suffix (remove);
 
                 this.addresses_group.add (row);

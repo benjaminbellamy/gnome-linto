@@ -46,6 +46,21 @@ namespace Linto {
             return linear_from_db (extract_peak (s));
         }
 
+        // Returns the peak in dBFS carried by a "level" message (0 dB is full
+        // scale, negative is headroom), or a very low value when the message is
+        // not a level message. Only meaningful once peak_from_message has
+        // confirmed the message is a level message.
+        public double peak_db_from_message (Gst.Message message) {
+            if (message.type != Gst.MessageType.ELEMENT) {
+                return -1000.0;
+            }
+            unowned Gst.Structure? s = message.get_structure ();
+            if (s == null || s.get_name () != "level") {
+                return -1000.0;
+            }
+            return extract_peak (s);
+        }
+
         // Converts a dBFS peak to a clamped 0..1 linear value for the VU meter.
         public double linear_from_db (double db) {
             if (db <= -90.0) {

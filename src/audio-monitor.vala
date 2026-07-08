@@ -23,8 +23,10 @@ namespace Linto {
     // measures the signal level of the selected device, so the user can see
     // whether there is signal and whether it is saturating.
     public class AudioMonitor : Object {
-        // Emitted at the level element interval with a peak in the range 0..1.
-        public signal void level (double peak);
+        // Emitted at the level element interval with a peak in the range 0..1
+        // (for the VU meter) and the same peak in dBFS (for the numeric
+        // readout); the dBFS value is a large negative number for silence.
+        public signal void level (double peak, double db);
         // Emitted when inputs are plugged in or removed.
         public signal void devices_changed ();
 
@@ -145,7 +147,7 @@ namespace Linto {
             this.current_index = index;
 
             if (index >= this.devices.length) {
-                this.level (0.0);
+                this.level (0.0, -1000.0);
                 return;
             }
 
@@ -230,7 +232,7 @@ namespace Linto {
                 this.pipeline = null;
             }
             this.proxy_sink = null;
-            this.level (0.0);
+            this.level (0.0, -1000.0);
         }
 
         // Rebuilds capture for the current device after a transient error, for
@@ -251,7 +253,7 @@ namespace Linto {
         private bool on_bus_message (Gst.Bus bus, Gst.Message message) {
             double peak = LevelMeter.peak_from_message (message);
             if (peak >= 0.0) {
-                this.level (peak);
+                this.level (peak, LevelMeter.peak_db_from_message (message));
             } else if (message.type == Gst.MessageType.ERROR) {
                 Error err;
                 string debug;

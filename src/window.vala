@@ -69,7 +69,10 @@ namespace Linto {
         private CheckStatus[] check_statuses = new CheckStatus[9];
         [GtkChild] private unowned Adw.ActionRow address_row;
         [GtkChild] private unowned Adw.ComboRow device_row;
+        [GtkChild] private unowned Adw.ActionRow level_row;
         [GtkChild] private unowned Gtk.LevelBar level_bar;
+        [GtkChild] private unowned Adw.ActionRow sent_row;
+        [GtkChild] private unowned Gtk.LevelBar sent_bar;
         [GtkChild] private unowned Gtk.Button stream_button;
         [GtkChild] private unowned Adw.ToastOverlay toast_overlay;
         [GtkChild] private unowned Adw.ActionRow elapsed_row;
@@ -99,6 +102,20 @@ namespace Linto {
         private string cooldown_url = "";
         private int64 cooldown_deadline_us = 0;
         private uint cooldown_timer_id = 0;
+        // Set while switching to another address mid-stream, so the brief IDLE
+        // as the old stream stops does not arm the restart cool-down (we start
+        // the new address immediately, and a different address is never limited).
+        private bool switching = false;
+
+        // Live "sent data rate" meter, sampled a few times a second straight
+        // from the streamer's byte counter, so the user can confirm audio is
+        // actually leaving the app (the server has been seen receiving SRT with
+        // no audio inside). Full scale is about 160 kbit/s, above the SRT wire
+        // rate, so a healthy stream sits high and a stall drops it to zero.
+        private const double SENT_BAR_FULL_BYTES_PER_SEC = 20000.0;
+        private uint sent_meter_timer_id = 0;
+        private uint64 sent_meter_last_bytes = 0;
+        private int64 sent_meter_last_us = 0;
 
         public ControlServer control_server;
         // Latest totals, mirrored to the control server status.
@@ -128,9 +145,21 @@ namespace Linto {
             this.settings.changed["srt-url"].connect (this.update_stream_button);
 
             this.audio_monitor = new AudioMonitor ();
-            this.audio_monitor.level.connect ((peak) => {
+            this.audio_monitor.level.connect ((peak, db) => {
                 this.level_bar.value = peak;
+                // Peak in dBFS: 0 is full scale (clipping), negative is
+                // headroom; below the noise floor it just reads as silent.
+                this.level_row.subtitle = (db <= -90.0)
+                    ? _("Silent")
+                    : _("%.1f dBFS").printf (db);
             });
+
+            // The sent-rate meter is a plain throughput bar, not a saturation
+            // gauge: drop the default low/high colour thresholds so it fills in
+            // one colour and does not read as "too loud" near the top.
+            this.sent_bar.remove_offset_value ("low");
+            this.sent_bar.remove_offset_value ("high");
+            this.reset_sent_meter ();
 
             this.streamer = new Streamer ();
             this.streamer.state_changed.connect (this.on_stream_state_changed);
@@ -376,8 +405,9 @@ namespace Linto {
 
         [GtkCallback]
         private void on_address_activated () {
-            // Opens the Stream Address manager; the action is disabled while
-            // streaming, so this is a no-op mid-stream.
+            // Opens the Stream Address manager. It stays available while
+            // streaming, so the user can switch to another address (which
+            // stops the current stream and starts the new one after a prompt).
             this.application.activate_action ("preferences", null);
         }
 
@@ -479,6 +509,13 @@ namespace Linto {
                 return;
             }
 
+            this.begin_stream (url);
+        }
+
+        // Starts streaming the given URL, replacing any current stream (the
+        // streamer stops the old pipeline before building the new one). The
+        // caller has already validated the URL and confirmed an input device.
+        private void begin_stream (string url) {
             // Load (or start) the saved totals for this URL. A never-seen URL
             // begins at zero; an existing one continues from its saved totals.
             this.active_url = url;
@@ -495,9 +532,12 @@ namespace Linto {
             this.stats_store.put (url, seed);
             this.stats_store.flush ();
 
-            // Open a fresh debug log for this session and record the current
-            // network checks before streaming (no-op when logging is disabled).
+            // Open a fresh debug log for this session and record the stream
+            // label and the current network checks before streaming (no-op when
+            // logging is disabled).
             DebugLog.get_default ().new_session ();
+            DebugLog.get_default ().log ("session",
+                "label=" + AddressBook.label_for (this.settings, url));
             this.log_network_checks ();
 
             // The capture pipeline keeps running and already holds the mono
@@ -507,6 +547,58 @@ namespace Linto {
             this.streamer.start (() => {
                 return this.audio_monitor.create_stream_source ();
             }, url);
+        }
+
+        // Whether a stream is currently running. The address manager reads this
+        // to decide whether picking another address is a live switch.
+        public bool is_streaming () {
+            return this.streamer.is_active;
+        }
+
+        // Whether the given URL is the stream currently running, so the address
+        // manager can prevent editing the address while it is being streamed.
+        public bool is_active_stream (string url) {
+            return this.streamer.is_active && url == this.active_url;
+        }
+
+        // Asks to switch to another address while streaming. Confirms first,
+        // then stops the current stream and starts the new one. On cancel, the
+        // address list rolls its selection back. Called by the address manager.
+        public void request_switch (string new_url, Preferences prefs) {
+            string? url_error = StreamUrl.validate (new_url);
+            if (url_error != null) {
+                this.toast (url_error);
+                prefs.reset_selection ();
+                return;
+            }
+            string label = AddressBook.label_for (this.settings, new_url);
+            var dialog = new Adw.AlertDialog (
+                _("Switch stream address?"),
+                _("Do you want to switch to %s?").printf (label));
+            dialog.add_response ("cancel", _("Cancel"));
+            dialog.add_response ("switch", _("Switch"));
+            dialog.set_response_appearance ("switch",
+                Adw.ResponseAppearance.SUGGESTED);
+            dialog.set_default_response ("switch");
+            dialog.set_close_response ("cancel");
+            dialog.choose.begin (this, null, (obj, res) => {
+                string response = dialog.choose.end (res);
+                if (response == "switch") {
+                    this.do_switch (new_url);
+                    prefs.close ();
+                } else {
+                    prefs.reset_selection ();
+                }
+            });
+        }
+
+        private void do_switch (string new_url) {
+            // Commit the selection so the main window and the address list
+            // agree, then restart on the new address right away.
+            AddressBook.select (this.settings, new_url);
+            this.switching = true;
+            this.begin_stream (new_url);
+            this.switching = false;
         }
 
         private void on_stream_state_changed (StreamState state, string? detail) {
@@ -519,9 +611,7 @@ namespace Linto {
                     this.stream_button.remove_css_class ("suggested-action");
                     this.stream_button.add_css_class ("destructive-action");
                     this.device_row.sensitive = false;
-                    // The address cannot be changed mid-stream.
-                    this.address_row.sensitive = false;
-                    this.set_prefs_enabled (false);
+                    this.start_sent_meter ();
                     string lead = protocol_lead (this.active_url);
                     if (state == StreamState.STREAMING) {
                         this.connect_failed = false;
@@ -539,12 +629,17 @@ namespace Linto {
                     this.stream_button.add_css_class ("suggested-action");
                     this.device_row.sensitive =
                         this.audio_monitor.devices.length > 0;
-                    this.address_row.sensitive = true;
                     this.connect_failed = false;
-                    this.set_prefs_enabled (true);
                     // Start the cool-down for the stream that just stopped; it
-                    // sets the button label (a countdown) and disables it.
-                    this.start_cooldown (this.active_url);
+                    // sets the button label (a countdown) and disables it. A
+                    // switch skips it: the new address starts at once, and a
+                    // different address is never rate limited.
+                    if (!this.switching) {
+                        this.start_cooldown (this.active_url);
+                    }
+                    // Stop the live sent-rate meter and empty it; nothing is
+                    // being sent while idle.
+                    this.stop_sent_meter ();
                     // Persist the final totals for this URL.
                     this.stats_store.flush ();
                     // Statistics stay on screen; they are never reset. The VU
@@ -552,6 +647,54 @@ namespace Linto {
                     break;
             }
             this.push_status ();
+        }
+
+        // Starts sampling the streamer's byte counter for the live sent-rate
+        // meter. Safe to call on every active state change; it only arms once.
+        private void start_sent_meter () {
+            if (this.sent_meter_timer_id != 0) {
+                return;
+            }
+            this.sent_meter_last_bytes = this.streamer.bytes_sent ();
+            this.sent_meter_last_us = GLib.get_monotonic_time ();
+            this.sent_meter_timer_id =
+                Timeout.add (250, this.on_sent_meter_tick);
+        }
+
+        private void stop_sent_meter () {
+            if (this.sent_meter_timer_id != 0) {
+                Source.remove (this.sent_meter_timer_id);
+                this.sent_meter_timer_id = 0;
+            }
+            this.reset_sent_meter ();
+        }
+
+        private void reset_sent_meter () {
+            this.sent_bar.value = 0;
+            this.sent_row.subtitle = _("0 B/s");
+        }
+
+        // Reads how many bytes have been handed to the network sink since the
+        // last tick and turns it into a bytes-per-second reading, so a stalled
+        // send (audio not leaving) shows as an empty bar and 0 B/s.
+        private bool on_sent_meter_tick () {
+            uint64 now_bytes = this.streamer.bytes_sent ();
+            int64 now_us = GLib.get_monotonic_time ();
+            int64 delta_us = now_us - this.sent_meter_last_us;
+            uint64 delta_bytes = (now_bytes >= this.sent_meter_last_bytes)
+                ? now_bytes - this.sent_meter_last_bytes
+                : 0;
+            this.sent_meter_last_bytes = now_bytes;
+            this.sent_meter_last_us = now_us;
+
+            double rate = (delta_us > 0)
+                ? (double) delta_bytes * 1000000.0 / (double) delta_us
+                : 0.0;
+            this.sent_bar.value =
+                double.min (rate, SENT_BAR_FULL_BYTES_PER_SEC);
+            this.sent_row.subtitle =
+                _("%s B/s").printf (((uint64) rate).to_string ());
+            return Source.CONTINUE;
         }
 
         // The initial connection could not be established (typically a wrong or
@@ -678,19 +821,6 @@ namespace Linto {
 
         private void toast (string message) {
             this.toast_overlay.add_toast (new Adw.Toast (message));
-        }
-
-        // Enables or disables the Stream address action (its menu item and
-        // shortcut), so the address cannot be changed while streaming.
-        private void set_prefs_enabled (bool enabled) {
-            var app = this.application as Gtk.Application;
-            if (app == null) {
-                return;
-            }
-            var action = app.lookup_action ("preferences") as SimpleAction;
-            if (action != null) {
-                action.set_enabled (enabled);
-            }
         }
 
         private static string format_duration (int64 seconds) {
