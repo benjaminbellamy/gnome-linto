@@ -25,6 +25,7 @@ gnome_linto_deps = [
   adw_dep,
   gio_dep,
   gst_dep,
+  gst_app_dep,
   soup_dep,
   m_dep,
   config_dep,

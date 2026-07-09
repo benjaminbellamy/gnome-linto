@@ -73,6 +73,8 @@ namespace Linto {
         [GtkChild] private unowned Gtk.LevelBar level_bar;
         [GtkChild] private unowned Adw.ActionRow sent_row;
         [GtkChild] private unowned Gtk.LevelBar sent_bar;
+        [GtkChild] private unowned Adw.ActionRow cpu_row;
+        [GtkChild] private unowned Gtk.LevelBar cpu_bar;
         [GtkChild] private unowned Gtk.Button stream_button;
         [GtkChild] private unowned Adw.ToastOverlay toast_overlay;
         [GtkChild] private unowned Adw.ActionRow elapsed_row;
@@ -94,18 +96,18 @@ namespace Linto {
         // so the streaming summary keeps showing the error while it retries.
         private bool connect_failed = false;
 
-        // Short cool-down after stopping, so the same stream cannot be
-        // restarted immediately (which tends to collide with the still-open
-        // session on the server). It applies only to the URL that was just
-        // stopped; selecting another address starts without waiting.
+        // Global cool-down after stopping any stream, so nothing can start for
+        // a few seconds (a new session that races the one the server is still
+        // releasing tends to fail). It applies to every stream, including a
+        // switch to a different address.
         private const int COOLDOWN_SECONDS = 5;
-        private string cooldown_url = "";
         private int64 cooldown_deadline_us = 0;
         private uint cooldown_timer_id = 0;
-        // Set while switching to another address mid-stream, so the brief IDLE
-        // as the old stream stops does not arm the restart cool-down (we start
-        // the new address immediately, and a different address is never limited).
-        private bool switching = false;
+        // The address a switch is waiting to start once the cool-down elapses,
+        // or "" when none is pending. Holding the confirmed URL (rather than a
+        // flag that re-reads the selection later) keeps the switch on the target
+        // the user actually confirmed.
+        private string pending_start_url = "";
 
         // Live "sent data rate" meter, sampled a few times a second straight
         // from the streamer's byte counter, so the user can confirm audio is
@@ -116,6 +118,18 @@ namespace Linto {
         private uint sent_meter_timer_id = 0;
         private uint64 sent_meter_last_bytes = 0;
         private int64 sent_meter_last_us = 0;
+
+        // System-wide CPU usage, sampled once a second from /proc/stat, so the
+        // user can tell whether the machine is saturated (for example when
+        // another encoder such as OBS is running at the same time).
+        private uint cpu_timer_id = 0;
+        private uint64 cpu_last_total = 0;
+        private uint64 cpu_last_idle = 0;
+        // Last text shown in the two live readouts, so the 10 Hz level callback
+        // and the 4 Hz sent-rate tick skip the string formatting and the widget
+        // relayout when the displayed value has not changed.
+        private string last_level_text = "";
+        private string last_sent_text = "";
 
         public ControlServer control_server;
         // Latest totals, mirrored to the control server status.
@@ -140,18 +154,19 @@ namespace Linto {
             });
             this.settings.changed["srt-url"].connect (this.update_address_row);
             this.settings.changed["addresses"].connect (this.update_address_row);
-            // Switching to a different address clears the countdown; switching
-            // back to the cooling-down one shows the remaining time again.
-            this.settings.changed["srt-url"].connect (this.update_stream_button);
 
             this.audio_monitor = new AudioMonitor ();
             this.audio_monitor.level.connect ((peak, db) => {
                 this.level_bar.value = peak;
                 // Peak in dBFS: 0 is full scale (clipping), negative is
                 // headroom; below the noise floor it just reads as silent.
-                this.level_row.subtitle = (db <= -90.0)
+                string text = (db <= -90.0)
                     ? _("Silent")
                     : _("%.1f dBFS").printf (db);
+                if (text != this.last_level_text) {
+                    this.last_level_text = text;
+                    this.level_row.subtitle = text;
+                }
             });
 
             // The sent-rate meter is a plain throughput bar, not a saturation
@@ -160,6 +175,12 @@ namespace Linto {
             this.sent_bar.remove_offset_value ("low");
             this.sent_bar.remove_offset_value ("high");
             this.reset_sent_meter ();
+
+            // The CPU bar keeps its default thresholds, so it colours toward the
+            // top as the machine saturates (high CPU is a warning, unlike a high
+            // data rate). Sample it once a second, whether streaming or not.
+            this.read_cpu (out this.cpu_last_total, out this.cpu_last_idle);
+            this.cpu_timer_id = Timeout.add_seconds (1, this.on_cpu_tick);
 
             this.streamer = new Streamer ();
             this.streamer.state_changed.connect (this.on_stream_state_changed);
@@ -421,13 +442,9 @@ namespace Linto {
                 : _("No address");
         }
 
-        // Begins the restart cool-down for the given URL and refreshes the
-        // start button so it shows the countdown right away.
-        private void start_cooldown (string url) {
-            if (url == "") {
-                return;
-            }
-            this.cooldown_url = url;
+        // Begins the global cool-down and refreshes the start button so it
+        // shows the countdown right away.
+        private void start_cooldown () {
             this.cooldown_deadline_us =
                 GLib.get_monotonic_time () + COOLDOWN_SECONDS * 1000000;
             if (this.cooldown_timer_id == 0) {
@@ -440,8 +457,17 @@ namespace Linto {
         private bool on_cooldown_tick () {
             if (this.cooldown_remaining_seconds () <= 0) {
                 this.cooldown_deadline_us = 0;
-                this.cooldown_url = "";
                 this.cooldown_timer_id = 0;
+                // A switch waits out the cool-down, then starts the address it
+                // confirmed on its own so the switch still completes.
+                if (this.pending_start_url != "") {
+                    string url = this.pending_start_url;
+                    this.pending_start_url = "";
+                    if (StreamUrl.validate (url) == null
+                        && this.selected_device_id () != null) {
+                        this.begin_stream (url);
+                    }
+                }
                 this.update_stream_button ();
                 return Source.REMOVE;
             }
@@ -461,19 +487,18 @@ namespace Linto {
             return (int) ((diff + 999999) / 1000000);
         }
 
-        // Sets the start button label and sensitivity for the current cool-down
-        // and selected address. Does nothing while a stream is active, where
-        // the button shows Pause.
+        // Sets the start button label and sensitivity for the current
+        // cool-down. Does nothing while a stream is active, where the button
+        // shows Pause.
         private void update_stream_button () {
             if (this.streamer.is_active) {
                 return;
             }
             int remaining = this.cooldown_remaining_seconds ();
-            string selected = this.settings.get_string ("srt-url").strip ();
-            if (remaining > 0 && selected == this.cooldown_url) {
+            if (remaining > 0) {
                 this.stream_button.sensitive = false;
                 this.stream_button.label =
-                    _("Restart in %d s").printf (remaining);
+                    _("Start in %d s").printf (remaining);
             } else {
                 this.stream_button.sensitive = true;
                 this.stream_button.label = _("Start streaming");
@@ -499,12 +524,11 @@ namespace Linto {
                 return;
             }
 
-            // Keep the same stream from restarting during its cool-down. A
-            // different address is not affected.
+            // No stream may start during the cool-down after a stop.
             int remaining = this.cooldown_remaining_seconds ();
-            if (remaining > 0 && url == this.cooldown_url) {
+            if (remaining > 0) {
                 this.toast (
-                    _("Please wait %d s before restarting this stream.").printf (
+                    _("Please wait %d s before starting a stream.").printf (
                         remaining));
                 return;
             }
@@ -516,6 +540,8 @@ namespace Linto {
         // streamer stops the old pipeline before building the new one). The
         // caller has already validated the URL and confirmed an input device.
         private void begin_stream (string url) {
+            // Any stream starting now settles any pending switch start.
+            this.pending_start_url = "";
             // Load (or start) the saved totals for this URL. A never-seen URL
             // begins at zero; an existing one continues from its saved totals.
             this.active_url = url;
@@ -594,11 +620,16 @@ namespace Linto {
 
         private void do_switch (string new_url) {
             // Commit the selection so the main window and the address list
-            // agree, then restart on the new address right away.
+            // agree, stop the current stream, then let the cool-down elapse
+            // before the new address starts (the same delay as any stream).
             AddressBook.select (this.settings, new_url);
-            this.switching = true;
-            this.begin_stream (new_url);
-            this.switching = false;
+            if (!this.streamer.is_active) {
+                return;
+            }
+            // Only queue the start when there is a live stream to stop, so the
+            // pending URL is always consumed by the IDLE that finish () produces.
+            this.pending_start_url = new_url;
+            this.streamer.finish ();
         }
 
         private void on_stream_state_changed (StreamState state, string? detail) {
@@ -630,16 +661,16 @@ namespace Linto {
                     this.device_row.sensitive =
                         this.audio_monitor.devices.length > 0;
                     this.connect_failed = false;
-                    // Start the cool-down for the stream that just stopped; it
-                    // sets the button label (a countdown) and disables it. A
-                    // switch skips it: the new address starts at once, and a
-                    // different address is never rate limited.
-                    if (!this.switching) {
-                        this.start_cooldown (this.active_url);
-                    }
+                    // Start the global cool-down for the stream that just
+                    // stopped; it disables the start button and shows a
+                    // countdown. It applies to any stream, so even a switch
+                    // waits it out (then auto-starts the selected address).
+                    this.start_cooldown ();
                     // Stop the live sent-rate meter and empty it; nothing is
                     // being sent while idle.
                     this.stop_sent_meter ();
+                    // Stop feeding the (now torn-down) stream source.
+                    this.audio_monitor.detach_stream_source ();
                     // Persist the final totals for this URL.
                     this.stats_store.flush ();
                     // Statistics stay on screen; they are never reset. The VU
@@ -671,7 +702,8 @@ namespace Linto {
 
         private void reset_sent_meter () {
             this.sent_bar.value = 0;
-            this.sent_row.subtitle = _("0 B/s");
+            this.last_sent_text = _("0 B/s");
+            this.sent_row.subtitle = this.last_sent_text;
         }
 
         // Reads how many bytes have been handed to the network sink since the
@@ -692,9 +724,70 @@ namespace Linto {
                 : 0.0;
             this.sent_bar.value =
                 double.min (rate, SENT_BAR_FULL_BYTES_PER_SEC);
-            this.sent_row.subtitle =
-                _("%s B/s").printf (((uint64) rate).to_string ());
+            string text = _("%s B/s").printf (((uint64) rate).to_string ());
+            if (text != this.last_sent_text) {
+                this.last_sent_text = text;
+                this.sent_row.subtitle = text;
+            }
             return Source.CONTINUE;
+        }
+
+        // Refreshes the system CPU usage readout from the delta since the last
+        // sample. Runs every second for the whole session.
+        private bool on_cpu_tick () {
+            uint64 total, idle;
+            if (!this.read_cpu (out total, out idle)) {
+                this.cpu_row.subtitle = _("Unavailable");
+                return Source.CONTINUE;
+            }
+            uint64 total_delta = total - this.cpu_last_total;
+            uint64 idle_delta = idle - this.cpu_last_idle;
+            this.cpu_last_total = total;
+            this.cpu_last_idle = idle;
+
+            double usage = (total_delta > 0)
+                ? (double) (total_delta - idle_delta) / (double) total_delta
+                : 0.0;
+            usage = usage.clamp (0.0, 1.0);
+            this.cpu_bar.value = usage;
+            this.cpu_row.subtitle = _("%d%%").printf ((int) (usage * 100.0 + 0.5));
+            return Source.CONTINUE;
+        }
+
+        // Reads the aggregate CPU counters from /proc/stat (system-wide, so it
+        // includes every process). "total" is all jiffies, "idle" is idle plus
+        // iowait; the caller turns two samples into a busy fraction.
+        private bool read_cpu (out uint64 total, out uint64 idle) {
+            total = 0;
+            idle = 0;
+            string contents;
+            try {
+                FileUtils.get_contents ("/proc/stat", out contents);
+            } catch (Error e) {
+                return false;
+            }
+            int nl = contents.index_of_char ('\n');
+            string line = (nl >= 0) ? contents.substring (0, nl) : contents;
+            uint64[] fields = {};
+            foreach (string part in line.split (" ")) {
+                if (part == "" || part == "cpu") {
+                    continue;
+                }
+                fields += uint64.parse (part);
+            }
+            // Need at least user, nice, system, idle, iowait.
+            if (fields.length < 5) {
+                return false;
+            }
+            idle = fields[3] + fields[4];
+            uint64 sum = 0;
+            // Sum user..steal (guest time is already counted inside user/nice).
+            int count = int.min (fields.length, 8);
+            for (int i = 0; i < count; i++) {
+                sum += fields[i];
+            }
+            total = sum;
+            return true;
         }
 
         // The initial connection could not be established (typically a wrong or

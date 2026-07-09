@@ -27,16 +27,18 @@ namespace Linto {
     }
 
     // Supplies a fresh source element on each (re)build, or null when the
-    // input is currently unavailable. It returns a proxysrc bridged to the
-    // always-on capture pipeline, so a reconnect never reopens the device.
+    // input is currently unavailable. It returns an appsrc fed by the always-on
+    // capture pipeline, so a reconnect never reopens the device. A fresh source
+    // per build is required: reusing one across builds does not replay the
+    // start/segment events, so nothing would flow after the first connection.
     public delegate Gst.Element? SourceProvider ();
 
     // Streams the captured audio to a LinTO endpoint and keeps the session
     // alive across transient failures by reconnecting with backoff:
-    //   proxysrc ! queue ! audioconvert ! audioresample
+    //   appsrc ! queue ! audioconvert ! audioresample
     //     ! rate=16000,channels=1 ! opusenc ! mpegtsmux ! rtpmp2tpay ! srtsink
-    // The mono input comes from the persistent capture pipeline through a
-    // proxysink/proxysrc bridge, so streaming never opens the device itself
+    // The mono input comes from the persistent capture pipeline, which pushes
+    // each buffer into this appsrc, so streaming never opens the device itself
     // and the PipeWire node is untouched on start and pause.
     public class Streamer : Object {
         public signal void stats (int64 elapsed_seconds, uint64 bytes_sent,
@@ -63,19 +65,8 @@ namespace Linto {
         private SourceProvider? source_provider = null;
         private string target_uri = "";
 
-        // The raw audio format fed into the mixer and encoder: 16 kHz mono, the
-        // rate the ASR expects. Both the live input and the silence source are
-        // forced to this so the mixer's inputs match.
-        private const string MIX_CAPS =
-            "audio/x-raw,format=S16LE,rate=16000,channels=1,layout=interleaved";
-
         private Gst.Pipeline? pipeline = null;
         private Gst.Element? source_element = null;
-        // A continuous, silent, live source mixed under the real input, so the
-        // encoder and the network sink are never starved when the real input
-        // stalls (device suspend, replug, capture rebuild). A gap on the wire
-        // tends to break the server session, so the stream must never stop.
-        private Gst.Element? silence_element = null;
         // Held only for SRT sessions, so debug logging can read its transport
         // stats (packets/bytes sent, ACKs, loss, RTT) each tick.
         private Gst.Element? srt_sink = null;
@@ -186,15 +177,10 @@ namespace Linto {
                 this.stop ();
                 return Source.REMOVE;
             });
-            // Sending EOS to the live sources is more reliable than to the
-            // pipeline. The mixer only forwards EOS once every input pad has
-            // seen it, so both the real input and the silence source must get
-            // it for the muxer to flush and the connection to close cleanly.
+            // Sending EOS to the live source is more reliable than to the
+            // pipeline, so the muxer flushes and the connection closes cleanly.
             if (this.source_element != null) {
                 this.source_element.send_event (new Gst.Event.eos ());
-                if (this.silence_element != null) {
-                    this.silence_element.send_event (new Gst.Event.eos ());
-                }
             } else {
                 this.pipeline.send_event (new Gst.Event.eos ());
             }
@@ -265,47 +251,19 @@ namespace Linto {
                     _("The audio input device is unavailable."));
             }
 
-            var pipe = new Gst.Pipeline (null);
-
-            // Real input branch, normalized to 16 kHz mono.
             var squeue = make_element ("queue");
-            var in_convert = make_element ("audioconvert");
-            var in_resample = make_element ("audioresample");
-            var in_caps = make_element ("capsfilter");
-            ((dynamic Gst.Element) in_caps).caps = Gst.Caps.from_string (MIX_CAPS);
 
-            // Silence branch: a live source that keeps the mixer, encoder and
-            // sink fed continuously. Volume 0 makes it digital silence, so it
-            // never colours the real audio; when the real input drops out the
-            // stream keeps sending silence instead of stalling the session.
-            var silence = make_element ("audiotestsrc");
-            ((dynamic Gst.Element) silence).is_live = true;
-            ((dynamic Gst.Element) silence).volume = 0.0;
-            var silence_caps = make_element ("capsfilter");
-            ((dynamic Gst.Element) silence_caps).caps =
-                Gst.Caps.from_string (MIX_CAPS);
+            var pipe = new Gst.Pipeline (null);
+            pipe.add_many (src, squeue);
 
-            var mixer = make_element ("audiomixer");
-
-            pipe.add_many (src, squeue, in_convert, in_resample, in_caps,
-                silence, silence_caps, mixer);
-
-            if (!src.link (squeue)
-                || !squeue.link_many (in_convert, in_resample, in_caps)
-                || !in_caps.link (mixer)) {
+            if (!src.link (squeue)) {
                 throw new IOError.FAILED (
                     _("Could not link the streaming branch."));
             }
-            if (!silence.link (silence_caps) || !silence_caps.link (mixer)) {
-                throw new IOError.FAILED (
-                    _("Could not link the silence branch."));
-            }
 
             this.source_element = src;
-            this.silence_element = silence;
-            // The encoder and sink depend on the protocol; both consume the
-            // mixed 16 kHz mono audio.
-            Gst.Element sink = this.build_output (pipe, mixer);
+            // The rate, channels, encoder and sink depend on the protocol.
+            Gst.Element sink = this.build_output (pipe, squeue);
 
             this.probe_pad = sink.get_static_pad ("sink");
             if (this.probe_pad != null) {
@@ -336,28 +294,34 @@ namespace Linto {
         }
 
         // Builds the encoder and sink for the target protocol, links them after
-        // the mixer (whose output is already 16 kHz mono), and returns the sink.
+        // squeue, and returns the sink element.
         private Gst.Element build_output (Gst.Pipeline pipe,
-            Gst.Element mixer) throws Error {
+            Gst.Element squeue) throws Error {
             switch (StreamUrl.protocol (this.target_uri)) {
                 case StreamProtocol.SRT:
                     // Opus in MPEG-TS over RTP. Opus is built for 16 kHz mono
                     // speech: low CPU and low bitrate, and it decodes to the
                     // 16 kHz mono the ASR expects.
                     var srt_convert = make_element ("audioconvert");
+                    var resample = make_element ("audioresample");
+                    var capsfilter = make_element ("capsfilter");
                     var encoder = make_element ("opusenc");
                     var muxer = make_element ("mpegtsmux");
                     var payloader = make_element ("rtpmp2tpay");
                     var sink = make_element ("srtsink");
+                    ((dynamic Gst.Element) capsfilter).caps =
+                        Gst.Caps.from_string (
+                            "audio/x-raw,rate=16000,channels=1");
                     ((dynamic Gst.Element) encoder).bitrate = 24000;
                     // 7 TS packets per buffer (1316 bytes) is the standard
                     // MPEG-TS-over-UDP/SRT payload, so the receiver locks onto
                     // the stream reliably on connect.
                     ((dynamic Gst.Element) muxer).alignment = 7;
                     ((dynamic Gst.Element) sink).uri = this.target_uri;
-                    pipe.add_many (srt_convert, encoder, muxer, payloader, sink);
-                    if (!mixer.link_many (srt_convert, encoder, muxer,
-                            payloader, sink)) {
+                    pipe.add_many (srt_convert, resample, capsfilter, encoder,
+                        muxer, payloader, sink);
+                    if (!squeue.link_many (srt_convert, resample, capsfilter,
+                            encoder, muxer, payloader, sink)) {
                         throw new IOError.FAILED (
                             _("Could not link the SRT output."));
                     }
@@ -367,15 +331,21 @@ namespace Linto {
                 case StreamProtocol.RTMP:
                     // AAC in FLV at 16 kHz mono, the format ASR expects.
                     var rtmp_convert = make_element ("audioconvert");
+                    var resample = make_element ("audioresample");
+                    var capsfilter = make_element ("capsfilter");
                     var encoder = make_element ("avenc_aac");
                     var parser = make_element ("aacparse");
                     var muxer = make_element ("flvmux");
                     var sink = make_element ("rtmp2sink");
+                    ((dynamic Gst.Element) capsfilter).caps =
+                        Gst.Caps.from_string (
+                            "audio/x-raw,rate=16000,channels=1");
                     ((dynamic Gst.Element) muxer).streamable = true;
                     ((dynamic Gst.Element) sink).location = this.target_uri;
-                    pipe.add_many (rtmp_convert, encoder, parser, muxer, sink);
-                    if (!mixer.link_many (rtmp_convert, encoder, parser, muxer,
-                            sink)) {
+                    pipe.add_many (rtmp_convert, resample, capsfilter, encoder,
+                        parser, muxer, sink);
+                    if (!squeue.link_many (rtmp_convert, resample, capsfilter,
+                            encoder, parser, muxer, sink)) {
                         throw new IOError.FAILED (
                             _("Could not link the RTMP output."));
                     }
@@ -398,7 +368,6 @@ namespace Linto {
             this.probe_id = 0;
             this.probe_pad = null;
             this.source_element = null;
-            this.silence_element = null;
             this.srt_sink = null;
             if (this.pipeline != null) {
                 this.pipeline.set_state (Gst.State.NULL);

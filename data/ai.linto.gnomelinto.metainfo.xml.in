@@ -35,6 +35,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.8" date="2026-07-09">
+      <description>
+        <p>Fixes streaming stability. Switching to another address, restarting a
+          stream, and reconnecting after a drop now work reliably (the internal
+          audio path was rebuilt). The stream keeps sending a continuous audio
+          signal even if the input briefly drops. Adds a live data rate meter, a
+          CPU usage indicator, and a level reading in dBFS, so you can confirm
+          audio is really being sent and see whether the machine is loaded.</p>
+      </description>
+    </release>
     <release version="1.0.7" date="2026-07-08">
       <description>
         <p>The stream now always sends a continuous audio signal (silence when

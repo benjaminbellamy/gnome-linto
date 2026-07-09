@@ -31,9 +31,11 @@ namespace Linto {
         public signal void devices_changed ();
 
         public GenericArray<Gst.Device> devices { get; private set; }
-        // The capture tap the streamer bridges to (proxysink), so streaming
-        // never opens its own input and the PipeWire node stays put.
-        public Gst.Element? proxy_sink { get; private set; default = null; }
+
+        // The raw audio format the capture tap delivers and the stream consumes:
+        // 16 kHz mono, the rate the ASR expects.
+        private const string TAP_CAPS =
+            "audio/x-raw,format=S16LE,rate=16000,channels=1,layout=interleaved";
 
         private Gst.DeviceMonitor monitor;
         private uint monitor_watch_id = 0;
@@ -41,6 +43,15 @@ namespace Linto {
         private uint bus_watch_id = 0;
         private uint current_index = 0;
         private uint retry_id = 0;
+
+        // The always-on capture tap: an appsink pulls each captured buffer and
+        // pushes it into the streamer's appsrc. A fresh appsrc is handed out per
+        // stream (create_stream_source), which is what makes restart, switch and
+        // reconnect work; a reused proxysink does not replay its start/segment
+        // events to a second consumer, so nothing would flow the second time.
+        private Gst.App.Sink? app_sink = null;
+        private Gst.App.Src? stream_src = null;
+        private Mutex stream_src_lock;
 
         construct {
             this.devices = new GenericArray<Gst.Device> ();
@@ -137,11 +148,19 @@ namespace Linto {
 
         // Builds and starts the persistent capture pipeline for the device at
         // the given index. It stays running while streaming, so the PipeWire
-        // node is created once and is not torn down on start or pause:
-        //   pipewiresrc(LinTO) ! channels=1 ! audioconvert ! tee
+        // node is created once and is not torn down on start or pause. A silent
+        // live source is mixed under the mic so the capture output (and the
+        // stream tap that bridges from it) never stops, even if the device
+        // stalls or suspends, so the stream keeps sending 100% of the time:
+        //   pipewiresrc(LinTO) ! channels=1 ! audioconvert ! audioresample
+        //     ! 16 kHz mono ! audiomixer ! tee
+        //   audiotestsrc(silent, live) ! 16 kHz mono ! audiomixer
         //     tee. ! queue ! level ! fakesink   (VU meter, always on)
-        //     tee. ! queue ! proxysink          (tap the streamer bridges to)
-        // Passing an out-of-range index simply stops capturing.
+        //     tee. ! queue ! appsink            (tap: pushes to the stream appsrc)
+        // The mixer runs entirely inside this one pipeline (both sources share
+        // its clock), which is the safe configuration. The appsink hands each
+        // buffer to the current stream appsrc; a fresh appsrc per stream is what
+        // lets restart, switch and reconnect work. Out-of-range index stops it.
         public void select (uint index) {
             this.stop_pipeline ();
             this.current_index = index;
@@ -155,16 +174,23 @@ namespace Linto {
             var src = create_source (device);
             var caps = Gst.ElementFactory.make ("capsfilter", null);
             var convert = Gst.ElementFactory.make ("audioconvert", null);
+            var resample = Gst.ElementFactory.make ("audioresample", null);
+            var mix_caps = Gst.ElementFactory.make ("capsfilter", null);
+            var silence = Gst.ElementFactory.make ("audiotestsrc", null);
+            var silence_caps = Gst.ElementFactory.make ("capsfilter", null);
+            var mixer = Gst.ElementFactory.make ("audiomixer", null);
             var tee = Gst.ElementFactory.make ("tee", null);
             var vqueue = Gst.ElementFactory.make ("queue", null);
             var level_element = Gst.ElementFactory.make ("level", null);
             var vsink = Gst.ElementFactory.make ("fakesink", null);
             var squeue = Gst.ElementFactory.make ("queue", null);
-            var proxy = Gst.ElementFactory.make ("proxysink", null);
+            var tap = Gst.ElementFactory.make ("appsink", null) as Gst.App.Sink;
 
-            if (src == null || caps == null || convert == null || tee == null ||
+            if (src == null || caps == null || convert == null ||
+                resample == null || mix_caps == null || silence == null ||
+                silence_caps == null || mixer == null || tee == null ||
                 vqueue == null || level_element == null || vsink == null ||
-                squeue == null || proxy == null) {
+                squeue == null || tap == null) {
                 warning ("Could not create the audio capture elements.");
                 return;
             }
@@ -174,14 +200,42 @@ namespace Linto {
             // streaming.
             ((dynamic Gst.Element) caps).caps =
                 Gst.Caps.from_string ("audio/x-raw,channels=1");
+            // Both mixer inputs must share one format: 16 kHz mono, the rate the
+            // ASR expects.
+            ((dynamic Gst.Element) mix_caps).caps =
+                Gst.Caps.from_string (TAP_CAPS);
+            ((dynamic Gst.Element) silence_caps).caps =
+                Gst.Caps.from_string (TAP_CAPS);
+            // A live, digitally silent floor (volume 0 leaves the real audio
+            // untouched when it is present).
+            ((dynamic Gst.Element) silence).is_live = true;
+            ((dynamic Gst.Element) silence).volume = 0.0;
             LevelMeter.configure (level_element);
             ((dynamic Gst.Element) vsink).sync = false;
 
+            // The tap never blocks the capture pipeline: it drops if the stream
+            // side is not keeping up, so the VU meter and mixer keep running.
+            tap.emit_signals = true;
+            tap.sync = false;
+            tap.max_buffers = 4;
+            tap.drop = true;
+            tap.new_sample.connect (this.on_tap_sample);
+
             var pipe = new Gst.Pipeline ("audio-capture");
-            pipe.add_many (src, caps, convert, tee, vqueue, level_element,
-                vsink, squeue, proxy);
-            if (!src.link_many (caps, convert, tee)) {
+            pipe.add_many (src, caps, convert, resample, mix_caps, silence,
+                silence_caps, mixer, tee, vqueue, level_element, vsink, squeue,
+                tap);
+            if (!src.link_many (caps, convert, resample, mix_caps)
+                || !mix_caps.link (mixer)) {
                 warning ("Could not link the audio capture chain.");
+                return;
+            }
+            if (!silence.link (silence_caps) || !silence_caps.link (mixer)) {
+                warning ("Could not link the silence source.");
+                return;
+            }
+            if (!mixer.link (tee)) {
+                warning ("Could not link the audio mixer.");
                 return;
             }
             if (!tee.link (vqueue) ||
@@ -189,7 +243,7 @@ namespace Linto {
                 warning ("Could not link the level metering branch.");
                 return;
             }
-            if (!tee.link (squeue) || !squeue.link (proxy)) {
+            if (!tee.link (squeue) || !squeue.link (tap)) {
                 warning ("Could not link the stream tap.");
                 return;
             }
@@ -200,22 +254,62 @@ namespace Linto {
 
             pipe.set_state (Gst.State.PLAYING);
             this.pipeline = pipe;
-            this.proxy_sink = proxy;
+            this.app_sink = tap;
         }
 
-        // Creates a proxysrc bridged to the capture's proxysink, so the
-        // streamer consumes the already-open mono input without opening (and
-        // recreating) the PipeWire node itself. Null when capture is not up.
+        // Pulls each captured buffer and pushes it into the current stream
+        // appsrc. Runs on the capture streaming thread, so access to stream_src
+        // is guarded. A copy is pushed (the sample keeps ownership of the
+        // original); the appsrc restamps it on its own clock.
+        private Gst.FlowReturn on_tap_sample (Gst.App.Sink sink) {
+            Gst.Sample? sample = sink.pull_sample ();
+            if (sample == null) {
+                return Gst.FlowReturn.OK;
+            }
+            unowned Gst.Buffer? buffer = sample.get_buffer ();
+            if (buffer == null) {
+                return Gst.FlowReturn.OK;
+            }
+            this.stream_src_lock.lock ();
+            Gst.App.Src? src = this.stream_src;
+            this.stream_src_lock.unlock ();
+            if (src != null) {
+                src.push_buffer ((Gst.Buffer) buffer.copy ());
+            }
+            return Gst.FlowReturn.OK;
+        }
+
+        // Hands the streamer a fresh appsrc for a new session. Each session gets
+        // its own appsrc so stream-start/segment events flow correctly; the
+        // capture appsink then feeds this source. Null when capture is not up.
         public Gst.Element? create_stream_source () {
-            if (this.proxy_sink == null) {
+            if (this.app_sink == null) {
                 return null;
             }
-            var src = Gst.ElementFactory.make ("proxysrc", null);
+            var src = Gst.ElementFactory.make ("appsrc", null) as Gst.App.Src;
             if (src == null) {
                 return null;
             }
-            ((dynamic Gst.Element) src).proxysink = this.proxy_sink;
+            src.is_live = true;
+            src.format = Gst.Format.TIME;
+            src.do_timestamp = true;
+            src.caps = Gst.Caps.from_string (TAP_CAPS);
+            // Bound the buffering and drop the oldest if the stream side stalls,
+            // so a stuck connection cannot grow memory without limit.
+            src.max_bytes = 320000;
+            src.leaky_type = Gst.App.LeakyType.DOWNSTREAM;
+            this.stream_src_lock.lock ();
+            this.stream_src = src;
+            this.stream_src_lock.unlock ();
             return src;
+        }
+
+        // Stops feeding the stream appsrc (the session has ended), so the
+        // capture appsink pulls and discards until the next session.
+        public void detach_stream_source () {
+            this.stream_src_lock.lock ();
+            this.stream_src = null;
+            this.stream_src_lock.unlock ();
         }
 
         public void stop () {
@@ -231,7 +325,7 @@ namespace Linto {
                 this.pipeline.set_state (Gst.State.NULL);
                 this.pipeline = null;
             }
-            this.proxy_sink = null;
+            this.app_sink = null;
             this.level (0.0, -1000.0);
         }
 

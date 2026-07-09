@@ -1,5 +1,5 @@
 project('gnome-linto', ['vala', 'c'],
-  version: '1.0.7',
+  version: '1.0.8',
   license: 'AGPL-3.0-or-later',
   meson_version: '>= 1.0.0',
   default_options: [
@@ -18,6 +18,7 @@ gtk_dep = dependency('gtk4', version: '>= 4.16')
 adw_dep = dependency('libadwaita-1', version: '>= 1.6')
 gio_dep = dependency('gio-2.0', version: '>= 2.80')
 gst_dep = dependency('gstreamer-1.0', version: '>= 1.20')
+gst_app_dep = dependency('gstreamer-app-1.0', version: '>= 1.20')
 soup_dep = dependency('libsoup-3.0', version: '>= 3.0')
 m_dep = cc.find_library('m', required: false)
 
