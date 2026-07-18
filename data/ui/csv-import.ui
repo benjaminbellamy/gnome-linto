@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="LintoCsvImport" parent="AdwDialog">
+    <property name="title" translatable="yes">Import Addresses</property>
+    <property name="content-width">640</property>
+    <property name="content-height">560</property>
+    <property name="child">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <property name="show-start-title-buttons">false</property>
+            <property name="show-end-title-buttons">false</property>
+            <child type="start">
+              <object class="GtkButton">
+                <property name="label" translatable="yes">_Cancel</property>
+                <property name="use-underline">true</property>
+                <signal name="clicked" handler="on_cancel"/>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton" id="import_button">
+                <property name="label" translatable="yes">_Import</property>
+                <property name="use-underline">true</property>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+                <signal name="clicked" handler="on_import"/>
+              </object>
+            </child>
+          </object>
+        </child>
+        <property name="content">
+          <object class="AdwToastOverlay" id="toast_overlay">
+            <property name="child">
+              <object class="AdwPreferencesPage">
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <property name="title" translatable="yes">Columns</property>
+                    <property name="description" translatable="yes">Choose which column holds the label and which holds the address. Other columns are ignored.</property>
+                    <child>
+                      <object class="AdwComboRow" id="label_combo">
+                        <property name="title" translatable="yes">Label column</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwComboRow" id="address_combo">
+                        <property name="title" translatable="yes">Address column</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <property name="title" translatable="yes">Preview</property>
+                    <child type="header-suffix">
+                      <object class="GtkLabel" id="preview_count">
+                        <property name="valign">center</property>
+                        <style>
+                          <class name="dim-label"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkScrolledWindow" id="preview_scroller">
+                        <property name="hscrollbar-policy">automatic</property>
+                        <property name="vscrollbar-policy">never</property>
+                        <property name="propagate-natural-height">true</property>
+                        <property name="hexpand">true</property>
+                        <style>
+                          <class name="card"/>
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>

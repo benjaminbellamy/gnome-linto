@@ -26,6 +26,8 @@ namespace Linto {
     public class Preferences : Adw.Dialog {
         [GtkChild]
         private unowned Adw.PreferencesGroup addresses_group;
+        [GtkChild]
+        private unowned Adw.ToastOverlay toast_overlay;
 
         private GLib.Settings settings;
         // The main window, used to detect an active stream and hand off a live
@@ -70,6 +72,130 @@ namespace Linto {
                 }
             });
             editor.present (this);
+        }
+
+        [GtkCallback]
+        private void on_import () {
+            var dialog = new Gtk.FileDialog ();
+            dialog.title = _("Import Addresses from CSV");
+            dialog.modal = true;
+
+            var filter = new Gtk.FileFilter ();
+            filter.name = _("CSV files");
+            filter.add_pattern ("*.csv");
+            filter.add_pattern ("*.CSV");
+            filter.add_mime_type ("text/csv");
+            var filters = new GLib.ListStore (typeof (Gtk.FileFilter));
+            filters.append (filter);
+            dialog.filters = filters;
+            dialog.default_filter = filter;
+
+            Gtk.Window? parent = this.get_root () as Gtk.Window;
+            dialog.open.begin (parent, null, (obj, res) => {
+                File? file = null;
+                try {
+                    file = dialog.open.end (res);
+                } catch (Error e) {
+                    // Cancelled or failed: nothing to import.
+                    return;
+                }
+                if (file != null) {
+                    this.load_csv (file);
+                }
+            });
+        }
+
+        private void load_csv (File file) {
+            uint8[] contents;
+            try {
+                file.load_contents (null, out contents, null);
+            } catch (Error e) {
+                this.toast_overlay.add_toast (new Adw.Toast (
+                    _("Could not read the file: %s").printf (e.message)));
+                return;
+            }
+
+            // load_contents nul-terminates the buffer, so this is a valid
+            // string even though the terminator is not counted in the length.
+            string text = (string) contents;
+            CsvRow[] parsed = Csv.parse (text);
+            if (parsed.length == 0) {
+                this.toast_overlay.add_toast (new Adw.Toast (
+                    _("The file has no rows to import.")));
+                return;
+            }
+            if (!Csv.has_any_address (parsed)) {
+                this.toast_overlay.add_toast (new Adw.Toast (
+                    _("No SRT or RTMP address found in this file.")));
+                return;
+            }
+
+            var dialog = new CsvImport (this.settings, parsed);
+            dialog.imported.connect ((added, total) => {
+                this.toast_overlay.add_toast (
+                    new Adw.Toast (import_summary (added, total)));
+            });
+            dialog.present (this);
+        }
+
+        // A short message describing what an import did.
+        private static string import_summary (int added, int total) {
+            if (added == 0) {
+                return _("No new addresses imported (all were already present).");
+            }
+            int skipped = total - added;
+            if (skipped > 0) {
+                return _("Imported %d addresses (%d already present).")
+                    .printf (added, skipped);
+            }
+            return _("Imported %d addresses.").printf (added);
+        }
+
+        [GtkCallback]
+        private void on_clear_all () {
+            if (AddressBook.load (this.settings).length == 0) {
+                return;
+            }
+            var dialog = new Adw.AlertDialog (
+                _("Remove all addresses?"),
+                _("This removes every saved stream address."));
+            dialog.add_response ("cancel", _("Cancel"));
+            dialog.add_response ("clear", _("Remove All"));
+            dialog.set_response_appearance ("clear",
+                Adw.ResponseAppearance.DESTRUCTIVE);
+            dialog.default_response = "cancel";
+            dialog.close_response = "cancel";
+            dialog.response.connect ((response) => {
+                if (response == "clear") {
+                    this.clear_all ();
+                }
+            });
+            dialog.present (this);
+        }
+
+        private void clear_all () {
+            string active = AddressBook.selected_url (this.settings);
+            bool streaming = (this.window != null
+                && this.window.is_streaming ());
+            Address[] next = {};
+            // Never drop the address that is streaming right now; keep it, the
+            // same way the per-row remove does.
+            if (streaming && active != "") {
+                foreach (var e in AddressBook.load (this.settings)) {
+                    if (e.url == active) {
+                        next += e;
+                        break;
+                    }
+                }
+            }
+            AddressBook.save (this.settings, next);
+            if (next.length == 0) {
+                AddressBook.select (this.settings, "");
+            }
+            if (next.length > 0) {
+                this.toast_overlay.add_toast (new Adw.Toast (
+                    _("Kept the address that is currently streaming.")));
+            }
         }
 
         private void edit_entry (int index) {

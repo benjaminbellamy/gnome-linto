@@ -4,6 +4,7 @@
     <file preprocess="xml-stripblanks">ui/window.ui</file>
     <file preprocess="xml-stripblanks">ui/preferences.ui</file>
     <file preprocess="xml-stripblanks">ui/address-editor.ui</file>
+    <file preprocess="xml-stripblanks">ui/csv-import.ui</file>
     <file preprocess="xml-stripblanks">ui/stream-controller.ui</file>
     <file preprocess="xml-stripblanks">ui/debug.ui</file>
   </gresource>

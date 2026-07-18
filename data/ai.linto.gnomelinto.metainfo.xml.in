@@ -35,6 +35,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.9" date="2026-07-18">
+      <description>
+        <p>You can now import stream addresses from a CSV file. Pick which
+          columns hold the label and the address (they are guessed
+          automatically from the first rows), preview the first rows, and
+          import. Addresses already saved are skipped, and a repeated label
+          gets a number so nothing is overwritten. A new Remove All button
+          clears every saved address at once, after a confirmation.</p>
+      </description>
+    </release>
     <release version="1.0.8" date="2026-07-09">
       <description>
         <p>Fixes streaming stability. Switching to another address, restarting a

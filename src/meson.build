@@ -8,6 +8,8 @@ gnome_linto_sources = [
   'preferences.vala',
   'address-book.vala',
   'address-editor.vala',
+  'csv-parser.vala',
+  'csv-import.vala',
   'stream-controller.vala',
   'debug-dialog.vala',
   'debug-log.vala',

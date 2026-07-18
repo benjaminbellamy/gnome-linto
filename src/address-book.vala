@@ -69,6 +69,62 @@ namespace Linto {
             settings.set_string ("srt-url", url.strip ());
         }
 
+        // Merges imported addresses into the saved list and returns how many
+        // new entries were added. Rules: an address already present (same URL)
+        // is skipped, whatever its label, so an identical label/address couple
+        // is skipped too. A new address whose label is already taken gets a
+        // unique label with an incremental " (2)", " (3)"... suffix. Within one
+        // import the growing list is checked, so duplicates inside the file are
+        // deduplicated the same way.
+        public int import_addresses (GLib.Settings settings, Address[] incoming) {
+            Address[] list = load (settings);
+            bool was_empty = (list.length == 0);
+            var urls = new GenericSet<string> (str_hash, str_equal);
+            var labels = new GenericSet<string> (str_hash, str_equal);
+            foreach (var e in list) {
+                urls.add (e.url);
+                labels.add (e.label);
+            }
+
+            int added = 0;
+            foreach (var inc in incoming) {
+                string url = inc.url.strip ();
+                if (url == "" || urls.contains (url)) {
+                    continue;
+                }
+                string label = unique_label (labels, inc.label.strip ());
+                list += Address () { label = label, url = url };
+                urls.add (url);
+                labels.add (label);
+                added++;
+            }
+
+            if (added > 0) {
+                save (settings, list);
+                // If the list was empty, the first imported address becomes the
+                // active one, matching the behavior of adding the first address.
+                if (was_empty && selected_url (settings) == "") {
+                    select (settings, list[0].url);
+                }
+            }
+            return added;
+        }
+
+        // Returns the label unchanged when it is free, otherwise the first
+        // "label (n)" (n starting at 2) that is not already taken.
+        private string unique_label (GenericSet<string> taken, string label) {
+            if (label == "" || !taken.contains (label)) {
+                return label;
+            }
+            int n = 2;
+            string candidate = "%s (%d)".printf (label, n);
+            while (taken.contains (candidate)) {
+                n++;
+                candidate = "%s (%d)".printf (label, n);
+            }
+            return candidate;
+        }
+
         // The label to show for a saved URL: its label, or the URL itself when
         // the label is empty, or an empty string for an empty URL.
         public string label_for (GLib.Settings settings, string url) {

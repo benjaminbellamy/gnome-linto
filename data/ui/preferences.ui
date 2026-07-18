@@ -10,6 +10,13 @@
       <object class="AdwToolbarView">
         <child type="top">
           <object class="AdwHeaderBar">
+            <child type="start">
+              <object class="GtkButton">
+                <property name="icon-name">user-trash-symbolic</property>
+                <property name="tooltip-text" translatable="yes">Remove all addresses</property>
+                <signal name="clicked" handler="on_clear_all"/>
+              </object>
+            </child>
             <child type="end">
               <object class="GtkButton">
                 <property name="icon-name">list-add-symbolic</property>
@@ -17,16 +24,27 @@
                 <signal name="clicked" handler="on_add"/>
               </object>
             </child>
+            <child type="end">
+              <object class="GtkButton">
+                <property name="icon-name">folder-open-symbolic</property>
+                <property name="tooltip-text" translatable="yes">Import addresses from a CSV file</property>
+                <signal name="clicked" handler="on_import"/>
+              </object>
+            </child>
           </object>
         </child>
         <property name="content">
-          <object class="AdwPreferencesPage">
-            <child>
-              <object class="AdwPreferencesGroup" id="addresses_group">
-                <property name="title" translatable="yes">Addresses</property>
-                <property name="description" translatable="yes">Pick the address to stream to. Add several and switch between them.</property>
+          <object class="AdwToastOverlay" id="toast_overlay">
+            <property name="child">
+              <object class="AdwPreferencesPage">
+                <child>
+                  <object class="AdwPreferencesGroup" id="addresses_group">
+                    <property name="title" translatable="yes">Addresses</property>
+                    <property name="description" translatable="yes">Pick the address to stream to. Add several and switch between them.</property>
+                  </object>
+                </child>
               </object>
-            </child>
+            </property>
           </object>
         </property>
       </object>
