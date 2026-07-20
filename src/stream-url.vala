@@ -71,5 +71,23 @@ namespace Linto {
             }
             return null;
         }
+
+        // Returns true when the URL's query string already contains the given
+        // parameter (matched case-insensitively). Used to leave a URL-provided
+        // value untouched when applying app defaults.
+        public bool has_query_param (string url, string name) {
+            try {
+                var uri = Uri.parse (url.strip (), UriFlags.NONE);
+                string? query = uri.get_query ();
+                if (query == null || query == "") {
+                    return false;
+                }
+                var pairs = Uri.parse_params (query, -1, "&",
+                                              UriParamsFlags.CASE_INSENSITIVE);
+                return pairs.contains (name);
+            } catch (Error e) {
+                return false;
+            }
+        }
     }
 }

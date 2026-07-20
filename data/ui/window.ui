@@ -22,6 +22,12 @@
       </item>
     </section>
   </menu>
+  <object class="GtkAdjustment" id="srt_latency_adjustment">
+    <property name="lower">20</property>
+    <property name="upper">8000</property>
+    <property name="step-increment">10</property>
+    <property name="page-increment">100</property>
+  </object>
   <template class="LintoWindow" parent="AdwApplicationWindow">
     <property name="title" translatable="yes">LinTO</property>
     <property name="default-width">600</property>
@@ -67,6 +73,13 @@
                             <property name="icon-name">go-next-symbolic</property>
                           </object>
                         </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwSpinRow" id="srt_latency_row">
+                        <property name="title" translatable="yes">SRT latency (ms)</property>
+                        <property name="subtitle" translatable="yes">Higher values drop fewer packets on a jittery link, at the cost of delay.</property>
+                        <property name="adjustment">srt_latency_adjustment</property>
                       </object>
                     </child>
                     <child>

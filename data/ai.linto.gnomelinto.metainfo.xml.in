@@ -35,6 +35,14 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.10" date="2026-07-20">
+      <description>
+        <p>Adds an SRT latency setting on the main window, so a jittery link has
+          more time to recover lost packets before the server drops them. It
+          defaults to 500 ms, is shown only for SRT addresses, is locked while
+          streaming, and a latency value already in the URL is respected.</p>
+      </description>
+    </release>
     <release version="1.0.9" date="2026-07-18">
       <description>
         <p>You can now import stream addresses from a CSV file. Pick which

@@ -68,6 +68,8 @@ namespace Linto {
         private const double MIN_UPLOAD_MBPS = 1.0;
         private CheckStatus[] check_statuses = new CheckStatus[9];
         [GtkChild] private unowned Adw.ActionRow address_row;
+        [GtkChild] private unowned Adw.SpinRow srt_latency_row;
+        [GtkChild] private unowned Gtk.Adjustment srt_latency_adjustment;
         [GtkChild] private unowned Adw.ComboRow device_row;
         [GtkChild] private unowned Adw.ActionRow level_row;
         [GtkChild] private unowned Gtk.LevelBar level_bar;
@@ -154,6 +156,20 @@ namespace Linto {
             });
             this.settings.changed["srt-url"].connect (this.update_address_row);
             this.settings.changed["addresses"].connect (this.update_address_row);
+
+            // Latency is an SRT-only knob, so the row is shown only when the
+            // active address is an SRT URL.
+            this.update_latency_visibility ();
+            this.settings.changed["srt-url"].connect (
+                this.update_latency_visibility);
+            this.srt_latency_adjustment.value =
+                (double) this.settings.get_int ("srt-latency");
+            this.srt_latency_adjustment.value_changed.connect (() => {
+                int ms = (int) this.srt_latency_adjustment.value;
+                if (ms != this.settings.get_int ("srt-latency")) {
+                    this.settings.set_int ("srt-latency", ms);
+                }
+            });
 
             this.audio_monitor = new AudioMonitor ();
             this.audio_monitor.level.connect ((peak, db) => {
@@ -442,6 +458,14 @@ namespace Linto {
                 : _("No address");
         }
 
+        // Shows the SRT latency row only for an SRT address; latency is an
+        // SRT-only setting and does not apply to RTMP.
+        private void update_latency_visibility () {
+            string url = this.settings.get_string ("srt-url").strip ();
+            this.srt_latency_row.visible =
+                StreamUrl.protocol (url) == StreamProtocol.SRT;
+        }
+
         // Begins the global cool-down and refreshes the start button so it
         // shows the countdown right away.
         private void start_cooldown () {
@@ -572,7 +596,7 @@ namespace Linto {
             this.connect_failed = false;
             this.streamer.start (() => {
                 return this.audio_monitor.create_stream_source ();
-            }, url);
+            }, url, this.settings.get_int ("srt-latency"));
         }
 
         // Whether a stream is currently running. The address manager reads this
@@ -642,6 +666,9 @@ namespace Linto {
                     this.stream_button.remove_css_class ("suggested-action");
                     this.stream_button.add_css_class ("destructive-action");
                     this.device_row.sensitive = false;
+                    // Latency is read once at start, so lock it while active to
+                    // match the address; a change only takes effect on restart.
+                    this.srt_latency_row.sensitive = false;
                     this.start_sent_meter ();
                     string lead = protocol_lead (this.active_url);
                     if (state == StreamState.STREAMING) {
@@ -660,6 +687,7 @@ namespace Linto {
                     this.stream_button.add_css_class ("suggested-action");
                     this.device_row.sensitive =
                         this.audio_monitor.devices.length > 0;
+                    this.srt_latency_row.sensitive = true;
                     this.connect_failed = false;
                     // Start the global cool-down for the stream that just
                     // stopped; it disables the start button and shows a

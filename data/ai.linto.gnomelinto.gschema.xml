@@ -52,5 +52,16 @@
         The TCP port the control server listens on.
       </description>
     </key>
+    <key name="srt-latency" type="i">
+      <default>500</default>
+      <range min="20" max="8000"/>
+      <summary>SRT latency</summary>
+      <description>
+        The SRT send latency in milliseconds. A larger value gives SRT more
+        time to retransmit lost packets before the receiver drops them, at the
+        cost of extra delay. Ignored when the streaming URL already sets a
+        latency parameter, and not used for RTMP.
+      </description>
+    </key>
   </schema>
 </schemalist>

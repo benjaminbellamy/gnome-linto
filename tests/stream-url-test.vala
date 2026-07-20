@@ -50,6 +50,18 @@ private void test_srt_missing_port () {
     assert (Linto.StreamUrl.validate ("srt://studio.linto.ai") != null);
 }
 
+private void test_has_query_param () {
+    // Present, absent, and case-insensitive key match.
+    assert (Linto.StreamUrl.has_query_param (
+        "srt://h:1?streamid=x,0&mode=caller&latency=1500", "latency"));
+    assert (!Linto.StreamUrl.has_query_param (
+        "srt://h:1?streamid=x,0&mode=caller", "latency"));
+    assert (Linto.StreamUrl.has_query_param (
+        "srt://h:1?streamid=x,0&LATENCY=800", "latency"));
+    // No query string at all.
+    assert (!Linto.StreamUrl.has_query_param ("srt://h:1", "latency"));
+}
+
 public int main (string[] args) {
     Test.init (ref args);
     Test.add_func ("/stream-url/srt-valid", test_srt_valid);
@@ -57,5 +69,6 @@ public int main (string[] args) {
     Test.add_func ("/stream-url/websocket-rejected", test_websocket_rejected_for_now);
     Test.add_func ("/stream-url/empty-and-unknown", test_empty_and_unknown);
     Test.add_func ("/stream-url/srt-missing-port", test_srt_missing_port);
+    Test.add_func ("/stream-url/has-query-param", test_has_query_param);
     return Test.run ();
 }

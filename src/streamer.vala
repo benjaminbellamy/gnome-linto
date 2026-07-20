@@ -64,6 +64,10 @@ namespace Linto {
 
         private SourceProvider? source_provider = null;
         private string target_uri = "";
+        // SRT send latency in milliseconds, applied to srtsink unless the URL
+        // already carries a latency parameter. Larger values give SRT more time
+        // to retransmit lost packets before the receiver drops them.
+        private int srt_latency_ms = 500;
 
         private Gst.Pipeline? pipeline = null;
         private Gst.Element? source_element = null;
@@ -107,11 +111,13 @@ namespace Linto {
             this.stop ();
         }
 
-        public void start (owned SourceProvider provider, string uri) {
+        public void start (owned SourceProvider provider, string uri,
+                           int srt_latency_ms) {
             this.stop ();
 
             this.source_provider = (owned) provider;
             this.target_uri = uri;
+            this.srt_latency_ms = srt_latency_ms;
             this.byte_count = 0;
             this.packet_count = 0;
             this.last_tick_bytes = 0;
@@ -318,6 +324,13 @@ namespace Linto {
                     // the stream reliably on connect.
                     ((dynamic Gst.Element) muxer).alignment = 7;
                     ((dynamic Gst.Element) sink).uri = this.target_uri;
+                    // Widen the retransmit window so lost packets are recovered
+                    // before the receiver drops them as too late. A latency in
+                    // the URL wins, so leave it untouched when one is present.
+                    if (!StreamUrl.has_query_param (this.target_uri, "latency")) {
+                        ((dynamic Gst.Element) sink).latency =
+                            this.srt_latency_ms;
+                    }
                     pipe.add_many (srt_convert, resample, capsfilter, encoder,
                         muxer, payloader, sink);
                     if (!squeue.link_many (srt_convert, resample, capsfilter,
