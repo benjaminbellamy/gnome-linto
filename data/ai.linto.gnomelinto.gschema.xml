@@ -63,5 +63,16 @@
         latency parameter, and not used for RTMP.
       </description>
     </key>
+    <key name="silence-timeout" type="i">
+      <default>120</default>
+      <range min="10" max="3600"/>
+      <summary>Silence auto-pause timeout</summary>
+      <description>
+        Seconds of no detected voice before streaming is automatically paused.
+        Streaming resumes automatically when voice is detected again. Voice is
+        detected by a voice activity detector, so steady background noise does
+        not count as speech.
+      </description>
+    </key>
   </schema>
 </schemalist>

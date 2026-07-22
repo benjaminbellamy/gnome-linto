@@ -29,6 +29,11 @@ namespace Linto {
         public signal void level (double peak, double db);
         // Emitted when inputs are plugged in or removed.
         public signal void devices_changed ();
+        // Emitted (on the main thread) when voice is detected again after the
+        // monitor was armed for auto-resume. The session appsrc has already been
+        // attached, so the tap is retaining the speech onset by the time this
+        // fires.
+        public signal void voice_returned ();
 
         public GenericArray<Gst.Device> devices { get; private set; }
 
@@ -52,8 +57,25 @@ namespace Linto {
         private Gst.App.Sink? app_sink = null;
         private Gst.App.Src? stream_src = null;
         private Mutex stream_src_lock;
+        // Set when an appsrc was attached at a speech onset (auto-resume), so
+        // the next take_stream_source hands that same buffering source to the
+        // new session instead of a fresh one. Guarded by stream_src_lock.
+        private bool onset_pending = false;
+
+        // Voice activity detection on the capture tap, so the window can pause
+        // on silence and resume on speech. Written on the streaming thread (the
+        // tap callback) and read on the main thread, so the shared state is
+        // guarded.
+        private Vad vad = new Vad ();
+        private Mutex voice_lock;
+        private int64 last_voice_mono_us = 0;
+        private bool resume_armed = false;
+        // The latest voice-detected state, mirrored for the main thread so the
+        // input level readout can show whether voice is present right now.
+        private bool voice_state = false;
 
         construct {
+            this.last_voice_mono_us = GLib.get_monotonic_time ();
             this.devices = new GenericArray<Gst.Device> ();
             this.monitor = new Gst.DeviceMonitor ();
             var caps = new Gst.Caps.empty_simple ("audio/x-raw");
@@ -270,6 +292,7 @@ namespace Linto {
             if (buffer == null) {
                 return Gst.FlowReturn.OK;
             }
+            this.analyze_voice (buffer);
             this.stream_src_lock.lock ();
             Gst.App.Src? src = this.stream_src;
             this.stream_src_lock.unlock ();
@@ -277,6 +300,102 @@ namespace Linto {
                 src.push_buffer ((Gst.Buffer) buffer.copy ());
             }
             return Gst.FlowReturn.OK;
+        }
+
+        // Runs voice activity detection on a captured buffer (runs on the tap
+        // thread, always, even when not streaming). Tracks the last-voice time
+        // and, while armed for auto-resume, attaches the session appsrc at the
+        // speech onset and signals the window to resume.
+        private void analyze_voice (Gst.Buffer buffer) {
+            Gst.MapInfo info;
+            if (!buffer.map (out info, Gst.MapFlags.READ)) {
+                return;
+            }
+            int n = (int) (info.size / 2);
+            var samples = new int16[n];
+            for (int i = 0; i < n; i++) {
+                int lo = info.data[2 * i];
+                int hi = info.data[2 * i + 1];
+                samples[i] = (int16) ((hi << 8) | lo);
+            }
+            buffer.unmap (info);
+
+            bool was = this.vad.speaking;
+            bool now = this.vad.push (samples);
+
+            this.voice_lock.lock ();
+            this.voice_state = now;
+            if (now) {
+                this.last_voice_mono_us = GLib.get_monotonic_time ();
+            }
+            bool armed = this.resume_armed;
+            this.voice_lock.unlock ();
+
+            // Confirmed speech onset while waiting to auto-resume: attach the
+            // session appsrc now so the tap retains the first words in its leaky
+            // buffer while the pipeline comes up, and hand off to the main
+            // thread to bring the stream back.
+            if (armed && !was && now) {
+                this.voice_lock.lock ();
+                this.resume_armed = false;
+                this.voice_lock.unlock ();
+                this.create_stream_source ();
+                this.stream_src_lock.lock ();
+                this.onset_pending = true;
+                this.stream_src_lock.unlock ();
+                Idle.add (() => {
+                    this.voice_returned ();
+                    return Source.REMOVE;
+                });
+            }
+        }
+
+        // Whether the detector currently considers voice present, for the live
+        // input level readout.
+        public bool voice_active () {
+            this.voice_lock.lock ();
+            bool v = this.voice_state;
+            this.voice_lock.unlock ();
+            return v;
+        }
+
+        // Milliseconds since voice was last detected, for the silence timeout.
+        public int64 idle_ms () {
+            this.voice_lock.lock ();
+            int64 last = this.last_voice_mono_us;
+            this.voice_lock.unlock ();
+            return (GLib.get_monotonic_time () - last) / 1000;
+        }
+
+        // Restarts the silence clock, so the timeout is measured from now (used
+        // when a stream begins or resumes).
+        public void reset_idle () {
+            this.voice_lock.lock ();
+            this.last_voice_mono_us = GLib.get_monotonic_time ();
+            this.voice_lock.unlock ();
+        }
+
+        // Arms (or disarms) auto-resume: while armed and not streaming, the next
+        // speech onset attaches the session appsrc and emits voice_returned.
+        public void arm_resume (bool armed) {
+            this.voice_lock.lock ();
+            this.resume_armed = armed;
+            this.voice_lock.unlock ();
+        }
+
+        // The appsrc for a new session's first build: the one already attached
+        // and buffering a speech onset (auto-resume, so the first words are not
+        // lost), or a fresh one. The onset source is handed out at most once.
+        public Gst.Element? take_stream_source () {
+            this.stream_src_lock.lock ();
+            bool pending = this.onset_pending;
+            this.onset_pending = false;
+            Gst.App.Src? attached = this.stream_src;
+            this.stream_src_lock.unlock ();
+            if (pending && attached != null) {
+                return attached;
+            }
+            return this.create_stream_source ();
         }
 
         // Hands the streamer a fresh appsrc for a new session. Each session gets
@@ -309,6 +428,7 @@ namespace Linto {
         public void detach_stream_source () {
             this.stream_src_lock.lock ();
             this.stream_src = null;
+            this.onset_pending = false;
             this.stream_src_lock.unlock ();
         }
 

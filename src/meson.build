@@ -10,7 +10,7 @@ gnome_linto_sources = [
   'address-editor.vala',
   'csv-parser.vala',
   'csv-import.vala',
-  'stream-controller.vala',
+  'settings-dialog.vala',
   'debug-dialog.vala',
   'debug-log.vala',
   'control-server.vala',
@@ -20,6 +20,7 @@ gnome_linto_sources = [
   'level-meter.vala',
   'audio-monitor.vala',
   'streamer.vala',
+  'vad.vala',
 ]
 
 gnome_linto_deps = [

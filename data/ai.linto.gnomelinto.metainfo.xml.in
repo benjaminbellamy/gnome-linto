@@ -35,6 +35,19 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.11" date="2026-07-22">
+      <description>
+        <p>Adds automatic pause on silence: streaming pauses on its own after a
+          configurable quiet period (a voice activity detector, so steady
+          background noise does not count as speech) and resumes automatically
+          when someone speaks again, keeping a short delay and not losing the
+          first words. The input level now shows whether voice is detected,
+          with a live countdown to the pause. The SRT latency, the new silence
+          timeout, and the Stream Deck Controller server settings now live in a
+          single Settings dialog in the menu. Fixes a stream that could not
+          resume after the server stopped, which previously needed a restart.</p>
+      </description>
+    </release>
     <release version="1.0.10" date="2026-07-20">
       <description>
         <p>Adds an SRT latency setting on the main window, so a jittery link has

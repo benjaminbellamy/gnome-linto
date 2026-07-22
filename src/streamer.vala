@@ -383,8 +383,17 @@ namespace Linto {
             this.source_element = null;
             this.srt_sink = null;
             if (this.pipeline != null) {
-                this.pipeline.set_state (Gst.State.NULL);
+                var old = this.pipeline;
                 this.pipeline = null;
+                old.set_state (Gst.State.NULL);
+                // Wait (bounded) for the NULL transition to settle so the
+                // srtsink libsrt socket is actually released before the last
+                // reference is dropped. Otherwise, when the SRT peer is dead,
+                // the streaming task can stay blocked and keep the socket alive
+                // for the life of the process, and later sessions cannot
+                // establish until the app is relaunched.
+                Gst.State cur, pend;
+                old.get_state (out cur, out pend, 3 * Gst.SECOND);
             }
         }
 

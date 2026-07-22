@@ -68,8 +68,6 @@ namespace Linto {
         private const double MIN_UPLOAD_MBPS = 1.0;
         private CheckStatus[] check_statuses = new CheckStatus[9];
         [GtkChild] private unowned Adw.ActionRow address_row;
-        [GtkChild] private unowned Adw.SpinRow srt_latency_row;
-        [GtkChild] private unowned Gtk.Adjustment srt_latency_adjustment;
         [GtkChild] private unowned Adw.ComboRow device_row;
         [GtkChild] private unowned Adw.ActionRow level_row;
         [GtkChild] private unowned Gtk.LevelBar level_bar;
@@ -110,6 +108,13 @@ namespace Linto {
         // flag that re-reads the selection later) keeps the switch on the target
         // the user actually confirmed.
         private string pending_start_url = "";
+
+        // Silence auto-pause: when streaming has been silent (no detected voice)
+        // for the configured timeout, the stream is paused on its own and
+        // auto_paused is set. It then resumes automatically when voice returns,
+        // keeping the same 5 s minimum the cool-down enforces. A manual pause
+        // never sets this, so it never auto-resumes.
+        private bool auto_paused = false;
 
         // Live "sent data rate" meter, sampled a few times a second straight
         // from the streamer's byte counter, so the user can confirm audio is
@@ -157,28 +162,33 @@ namespace Linto {
             this.settings.changed["srt-url"].connect (this.update_address_row);
             this.settings.changed["addresses"].connect (this.update_address_row);
 
-            // Latency is an SRT-only knob, so the row is shown only when the
-            // active address is an SRT URL.
-            this.update_latency_visibility ();
-            this.settings.changed["srt-url"].connect (
-                this.update_latency_visibility);
-            this.srt_latency_adjustment.value =
-                (double) this.settings.get_int ("srt-latency");
-            this.srt_latency_adjustment.value_changed.connect (() => {
-                int ms = (int) this.srt_latency_adjustment.value;
-                if (ms != this.settings.get_int ("srt-latency")) {
-                    this.settings.set_int ("srt-latency", ms);
-                }
-            });
-
             this.audio_monitor = new AudioMonitor ();
+            this.audio_monitor.voice_returned.connect (this.on_voice_returned);
             this.audio_monitor.level.connect ((peak, db) => {
                 this.level_bar.value = peak;
                 // Peak in dBFS: 0 is full scale (clipping), negative is
                 // headroom; below the noise floor it just reads as silent.
-                string text = (db <= -90.0)
+                string level_text = (db <= -90.0)
                     ? _("Silent")
                     : _("%.1f dBFS").printf (db);
+                // Real-time voice activity, so the user can see when the
+                // detector considers there is no voice. While streaming, show a
+                // live countdown to the silence auto-pause.
+                string text;
+                if (this.audio_monitor.voice_active ()) {
+                    text = _("%s (voice)").printf (level_text);
+                } else if (this.streamer.state == StreamState.STREAMING
+                           && !this.auto_paused) {
+                    int remaining = this.settings.get_int ("silence-timeout")
+                        - (int) (this.audio_monitor.idle_ms () / 1000);
+                    if (remaining < 0) {
+                        remaining = 0;
+                    }
+                    text = _("%s (no voice, pausing in %d s)").printf (
+                        level_text, remaining);
+                } else {
+                    text = _("%s (no voice)").printf (level_text);
+                }
                 if (text != this.last_level_text) {
                     this.last_level_text = text;
                     this.level_row.subtitle = text;
@@ -458,14 +468,6 @@ namespace Linto {
                 : _("No address");
         }
 
-        // Shows the SRT latency row only for an SRT address; latency is an
-        // SRT-only setting and does not apply to RTMP.
-        private void update_latency_visibility () {
-            string url = this.settings.get_string ("srt-url").strip ();
-            this.srt_latency_row.visible =
-                StreamUrl.protocol (url) == StreamProtocol.SRT;
-        }
-
         // Begins the global cool-down and refreshes the start button so it
         // shows the countdown right away.
         private void start_cooldown () {
@@ -518,6 +520,13 @@ namespace Linto {
             if (this.streamer.is_active) {
                 return;
             }
+            // While auto-paused on silence, the button restarts the stream now
+            // instead of waiting for voice (a manual override of the wait).
+            if (this.auto_paused) {
+                this.stream_button.sensitive = true;
+                this.stream_button.label = _("Force restart");
+                return;
+            }
             int remaining = this.cooldown_remaining_seconds ();
             if (remaining > 0) {
                 this.stream_button.sensitive = false;
@@ -548,6 +557,12 @@ namespace Linto {
                 return;
             }
 
+            // Force restart from an auto-pause: start now, overriding the wait.
+            if (this.auto_paused) {
+                this.begin_stream (url);
+                return;
+            }
+
             // No stream may start during the cool-down after a stop.
             int remaining = this.cooldown_remaining_seconds ();
             if (remaining > 0) {
@@ -566,6 +581,11 @@ namespace Linto {
         private void begin_stream (string url) {
             // Any stream starting now settles any pending switch start.
             this.pending_start_url = "";
+            // Starting (for any reason) leaves the auto-pause state, and the
+            // silence clock restarts so the timeout counts from now.
+            this.auto_paused = false;
+            this.audio_monitor.arm_resume (false);
+            this.audio_monitor.reset_idle ();
             // Load (or start) the saved totals for this URL. A never-seen URL
             // begins at zero; an existing one continues from its saved totals.
             this.active_url = url;
@@ -594,8 +614,11 @@ namespace Linto {
             // input, so streaming just bridges to it; the PipeWire node is not
             // recreated on start or pause.
             this.connect_failed = false;
+            // The monitor hands out the onset-buffering appsrc for an auto-resume
+            // (so the first words are not lost) or a fresh one otherwise, and
+            // mints a fresh one for reconnect builds.
             this.streamer.start (() => {
-                return this.audio_monitor.create_stream_source ();
+                return this.audio_monitor.take_stream_source ();
             }, url, this.settings.get_int ("srt-latency"));
         }
 
@@ -666,9 +689,6 @@ namespace Linto {
                     this.stream_button.remove_css_class ("suggested-action");
                     this.stream_button.add_css_class ("destructive-action");
                     this.device_row.sensitive = false;
-                    // Latency is read once at start, so lock it while active to
-                    // match the address; a change only takes effect on restart.
-                    this.srt_latency_row.sensitive = false;
                     this.start_sent_meter ();
                     string lead = protocol_lead (this.active_url);
                     if (state == StreamState.STREAMING) {
@@ -687,7 +707,6 @@ namespace Linto {
                     this.stream_button.add_css_class ("suggested-action");
                     this.device_row.sensitive =
                         this.audio_monitor.devices.length > 0;
-                    this.srt_latency_row.sensitive = true;
                     this.connect_failed = false;
                     // Start the global cool-down for the stream that just
                     // stopped; it disables the start button and shows a
@@ -701,6 +720,15 @@ namespace Linto {
                     this.audio_monitor.detach_stream_source ();
                     // Persist the final totals for this URL.
                     this.stats_store.flush ();
+                    // An auto-pause on silence: arm the monitor to resume on the
+                    // next voice (it attaches a fresh appsrc at the onset), now
+                    // that the old source is detached.
+                    if (this.auto_paused) {
+                        this.audio_monitor.arm_resume (true);
+                        this.streaming_expander.subtitle =
+                            protocol_lead (this.active_url)
+                            + _("Paused on silence, waiting for sound");
+                    }
                     // Statistics stay on screen; they are never reset. The VU
                     // meter keeps running from the always-on capture pipeline.
                     break;
@@ -779,7 +807,59 @@ namespace Linto {
             usage = usage.clamp (0.0, 1.0);
             this.cpu_bar.value = usage;
             this.cpu_row.subtitle = _("%d%%").printf ((int) (usage * 100.0 + 0.5));
+
+            this.check_silence_timeout ();
             return Source.CONTINUE;
+        }
+
+        // Pauses the stream when it has been silent (no detected voice) for the
+        // configured timeout. It resumes on its own when voice returns (see
+        // on_voice_returned). Only an actively streaming session auto-pauses.
+        private void check_silence_timeout () {
+            if (this.auto_paused
+                || this.streamer.state != StreamState.STREAMING) {
+                return;
+            }
+            int timeout_s = this.settings.get_int ("silence-timeout");
+            if (this.audio_monitor.idle_ms () >= (int64) timeout_s * 1000) {
+                this.auto_paused = true;
+                DebugLog.get_default ().log ("session",
+                    "auto-pause after %ds of silence".printf (timeout_s));
+                // A clean end of stream, so the server releases the session and
+                // the resume can reconnect cleanly.
+                this.streamer.finish ();
+            }
+        }
+
+        // Voice returned while auto-paused: the monitor has already attached an
+        // appsrc buffering the onset, so resume, keeping the 5 s minimum the
+        // cool-down enforces (wait it out if the pause was under 5 s ago).
+        private void on_voice_returned () {
+            if (!this.auto_paused) {
+                return;
+            }
+            // Resume the currently selected address, not the one that was
+            // paused: the user may have picked a different address while
+            // auto-paused (the streamer is idle then, so that is a plain
+            // selection, mirrored to srt-url), and the switch must take effect.
+            string url = this.settings.get_string ("srt-url").strip ();
+            if (StreamUrl.validate (url) != null
+                || this.selected_device_id () == null) {
+                // Cannot resume (address cleared or no device); stay paused and
+                // wait for the next voice.
+                this.audio_monitor.arm_resume (true);
+                return;
+            }
+            DebugLog.get_default ().log ("session", "voice returned: resuming");
+            int remaining = this.cooldown_remaining_seconds ();
+            if (remaining > 0) {
+                // Enforce the 5 s minimum: let the cool-down elapse, then its
+                // tick starts this address. The attached appsrc keeps buffering
+                // the onset until then.
+                this.pending_start_url = url;
+            } else {
+                this.begin_stream (url);
+            }
         }
 
         // Reads the aggregate CPU counters from /proc/stat (system-wide, so it
@@ -1072,7 +1152,7 @@ namespace Linto {
             }
         }
 
-        private static string? get_local_ip (SocketFamily family,
+        internal static string? get_local_ip (SocketFamily family,
             string probe_address) {
             try {
                 var socket = new Socket (family, SocketType.DATAGRAM,
