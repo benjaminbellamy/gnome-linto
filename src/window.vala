@@ -68,6 +68,7 @@ namespace Linto {
         private const double MIN_UPLOAD_MBPS = 1.0;
         private CheckStatus[] check_statuses = new CheckStatus[9];
         [GtkChild] private unowned Adw.ActionRow address_row;
+        [GtkChild] private unowned Gtk.MenuButton transcription_button;
         [GtkChild] private unowned Adw.ComboRow device_row;
         [GtkChild] private unowned Adw.ActionRow level_row;
         [GtkChild] private unowned Gtk.LevelBar level_bar;
@@ -151,6 +152,7 @@ namespace Linto {
         construct {
             this.settings = new GLib.Settings (Config.APP_ID);
             this.stats_store = new StatsStore ();
+            this.install_transcription_actions ();
             this.show_stored_stats (this.settings.get_string ("srt-url").strip ());
             this.update_address_row ();
             this.settings.changed["srt-url"].connect (() => {
@@ -458,7 +460,9 @@ namespace Linto {
             this.application.activate_action ("preferences", null);
         }
 
-        // Shows the active address label (or its URL) on the main window.
+        // Shows the active address label (or its URL) on the main window, and
+        // shows the transcription menu only when the active address has a public
+        // transcription URL.
         private void update_address_row () {
             string label = AddressBook.active_label (this.settings);
             // Escape it: the row subtitle is Pango markup and a URL fallback can
@@ -466,6 +470,59 @@ namespace Linto {
             this.address_row.subtitle = label != ""
                 ? Markup.escape_text (label)
                 : _("No address");
+            this.transcription_button.visible =
+                AddressBook.active_transcription_url (this.settings) != "";
+        }
+
+        // The three actions behind the transcription menu on the address row.
+        // Each reads the active transcription URL when invoked, so it always
+        // acts on the currently selected address.
+        private void install_transcription_actions () {
+            var copy = new SimpleAction ("transcription-copy", null);
+            copy.activate.connect (() => {
+                string url = AddressBook.active_transcription_url (this.settings);
+                if (url == "") {
+                    return;
+                }
+                this.get_clipboard ().set_text (url);
+                this.toast (_("Transcription URL copied to clipboard"));
+            });
+            this.add_action (copy);
+
+            var qr = new SimpleAction ("transcription-qr", null);
+            qr.activate.connect (() => {
+                string url = AddressBook.active_transcription_url (this.settings);
+                if (url == "") {
+                    return;
+                }
+                QrCode? code = QrCode.encode (url);
+                if (code == null) {
+                    this.toast (
+                        _("The transcription URL is too long for a QR code."));
+                    return;
+                }
+                new QrDialog (this, code, url).present ();
+            });
+            this.add_action (qr);
+
+            var open = new SimpleAction ("transcription-open", null);
+            open.activate.connect (() => {
+                string url = AddressBook.active_transcription_url (this.settings);
+                if (url == "") {
+                    return;
+                }
+                var launcher = new Gtk.UriLauncher (url);
+                launcher.launch.begin (this, null, (obj, res) => {
+                    try {
+                        launcher.launch.end (res);
+                    } catch (Error e) {
+                        this.toast (
+                            _("Could not open the transcription URL: %s")
+                            .printf (e.message));
+                    }
+                });
+            });
+            this.add_action (open);
         }
 
         // Begins the global cool-down and refreshes the start button so it

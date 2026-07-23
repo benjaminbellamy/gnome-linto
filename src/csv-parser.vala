@@ -138,6 +138,12 @@ namespace Linto {
             return p == StreamProtocol.SRT || p == StreamProtocol.RTMP;
         }
 
+        // True when the value looks like a public web (transcription) URL.
+        public bool looks_like_https (string value) {
+            string v = value.strip ();
+            return v.has_prefix ("https://") || v.has_prefix ("http://");
+        }
+
         // True when the first row looks like a header: it has fields and none
         // of them contains "://", so no cell is an address or a URL.
         public bool has_header (CsvRow[] rows) {
@@ -169,8 +175,11 @@ namespace Linto {
         // that look like an SRT/RTMP address) and which holds the label (the
         // non-address column with the most plain, non-URL values). Falls back
         // to sensible defaults so a selection is always offered.
-        public void detect_columns (CsvRow[] rows,
-                                    out int label_col, out int address_col) {
+        // transcription_col is -1 when no column looks like a public web URL
+        // (the transcription URL is optional).
+        public void detect_columns (CsvRow[] rows, out int label_col,
+                                    out int address_col,
+                                    out int transcription_col) {
             int cols = 0;
             foreach (var r in rows) {
                 if (r.length > cols) {
@@ -193,10 +202,28 @@ namespace Linto {
                 }
             }
 
+            transcription_col = -1;
+            int best_trans = 0;
+            for (int c = 0; c < cols; c++) {
+                if (c == address_col) {
+                    continue;
+                }
+                int hits = 0;
+                foreach (var r in rows) {
+                    if (c < r.length && looks_like_https (r.get (c))) {
+                        hits++;
+                    }
+                }
+                if (hits > best_trans) {
+                    best_trans = hits;
+                    transcription_col = c;
+                }
+            }
+
             label_col = -1;
             int best_label = -1;
             for (int c = 0; c < cols; c++) {
-                if (c == address_col) {
+                if (c == address_col || c == transcription_col) {
                     continue;
                 }
                 int good = 0;

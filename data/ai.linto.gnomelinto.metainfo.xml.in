@@ -35,6 +35,15 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.12" date="2026-07-23">
+      <description>
+        <p>Each saved stream can now carry an optional public transcription URL.
+          Set it in the add or edit form (with a paste button) or import it from
+          a CSV column (guessed automatically). When the selected stream has one,
+          a menu on the address row lets you copy the URL, show it as a QR code
+          in a resizable window, or open it in your browser.</p>
+      </description>
+    </release>
     <release version="1.0.11" date="2026-07-22">
       <description>
         <p>Adds automatic pause on silence: streaming pauses on its own after a

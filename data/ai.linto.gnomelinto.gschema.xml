@@ -21,6 +21,16 @@
         which one is active; its URL is mirrored to srt-url.
       </description>
     </key>
+    <key name="transcription-urls" type="a(ss)">
+      <default>[]</default>
+      <summary>Public transcription URLs</summary>
+      <description>
+        Optional public transcription URL for a stream, each a (stream URL,
+        transcription URL) pair. Kept separate from the addresses key so an
+        upgrade never has to change that key's type. Only streams that have one
+        appear here.
+      </description>
+    </key>
     <key name="control-enabled" type="b">
       <default>false</default>
       <summary>Enable the control server</summary>

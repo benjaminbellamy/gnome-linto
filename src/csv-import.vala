@@ -35,6 +35,8 @@ namespace Linto {
         [GtkChild]
         private unowned Adw.ComboRow address_combo;
         [GtkChild]
+        private unowned Adw.ComboRow transcription_combo;
+        [GtkChild]
         private unowned Gtk.ScrolledWindow preview_scroller;
         [GtkChild]
         private unowned Gtk.Label preview_count;
@@ -77,25 +79,35 @@ namespace Linto {
             int cols = this.column_count ();
 
             // Each combo needs its own model so selecting one does not move the
-            // other.
+            // others.
             var label_model = new Gtk.StringList (null);
             var address_model = new Gtk.StringList (null);
+            // The transcription URL is optional, so its combo leads with "None".
+            var transcription_model = new Gtk.StringList (null);
+            transcription_model.append (_("None"));
             for (int c = 0; c < cols; c++) {
                 string title = this.column_title (c);
                 label_model.append (title);
                 address_model.append (title);
+                transcription_model.append (title);
             }
             this.label_combo.model = label_model;
             this.address_combo.model = address_model;
+            this.transcription_combo.model = transcription_model;
 
-            int label_col, address_col;
-            Csv.detect_columns (this.rows, out label_col, out address_col);
+            int label_col, address_col, transcription_col;
+            Csv.detect_columns (this.rows, out label_col, out address_col,
+                out transcription_col);
             if (label_col >= 0 && label_col < cols) {
                 this.label_combo.selected = label_col;
             }
             if (address_col >= 0 && address_col < cols) {
                 this.address_combo.selected = address_col;
             }
+            // Index 0 is "None"; a detected column is offset by one.
+            this.transcription_combo.selected =
+                (transcription_col >= 0 && transcription_col < cols)
+                ? transcription_col + 1 : 0;
         }
 
         // A combo entry for a column. With a header row, the header name is
@@ -208,6 +220,9 @@ namespace Linto {
                     _("The label and address columns must be different."));
                 return;
             }
+            // Index 0 of the transcription combo is "None"; anything else is a
+            // column offset by one.
+            int transcription_col = (int) this.transcription_combo.selected - 1;
 
             Address[] incoming = {};
             foreach (var r in this.rows) {
@@ -216,7 +231,16 @@ namespace Linto {
                     continue;
                 }
                 string label = r.get (label_col).strip ();
-                incoming += Address () { label = label, url = url };
+                string transcription = "";
+                if (transcription_col >= 0) {
+                    string t = r.get (transcription_col).strip ();
+                    if (Csv.looks_like_https (t)) {
+                        transcription = t;
+                    }
+                }
+                incoming += Address () {
+                    label = label, url = url, transcription_url = transcription
+                };
             }
 
             if (incoming.length == 0) {

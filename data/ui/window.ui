@@ -22,6 +22,22 @@
       </item>
     </section>
   </menu>
+  <menu id="transcription_menu">
+    <section>
+      <item>
+        <attribute name="label" translatable="yes">_Copy transcription URL to clipboard</attribute>
+        <attribute name="action">win.transcription-copy</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">Show transcription _QR-code</attribute>
+        <attribute name="action">win.transcription-qr</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">_Open transcription</attribute>
+        <attribute name="action">win.transcription-open</attribute>
+      </item>
+    </section>
+  </menu>
   <template class="LintoWindow" parent="AdwApplicationWindow">
     <property name="title" translatable="yes">LinTO</property>
     <property name="default-width">600</property>
@@ -62,6 +78,18 @@
                         <property name="subtitle" translatable="yes">No address</property>
                         <property name="activatable">true</property>
                         <signal name="activated" handler="on_address_activated"/>
+                        <child type="suffix">
+                          <object class="GtkMenuButton" id="transcription_button">
+                            <property name="visible">false</property>
+                            <property name="valign">center</property>
+                            <property name="icon-name">emblem-shared-symbolic</property>
+                            <property name="tooltip-text" translatable="yes">Public transcription</property>
+                            <property name="menu-model">transcription_menu</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
                         <child type="suffix">
                           <object class="GtkImage">
                             <property name="icon-name">go-next-symbolic</property>

@@ -61,10 +61,14 @@ namespace Linto {
 
         [GtkCallback]
         private void on_add () {
-            var editor = new AddressEditor (_("Add address"), "", "");
-            editor.saved.connect ((label, url) => {
+            var editor = new AddressEditor (_("Add address"), "", "", "");
+            editor.saved.connect ((label, url, transcription_url) => {
                 Address[] list = AddressBook.load (this.settings);
-                list += Address () { label = label, url = url };
+                list += Address () {
+                    label = label,
+                    url = url,
+                    transcription_url = transcription_url
+                };
                 AddressBook.save (this.settings, list);
                 // The first address added becomes the active one.
                 if (AddressBook.selected_url (this.settings) == "") {
@@ -211,14 +215,18 @@ namespace Linto {
                 return;
             }
             var editor = new AddressEditor (_("Edit address"),
-                current.label, current.url);
-            editor.saved.connect ((label, url) => {
+                current.label, current.url, current.transcription_url);
+            editor.saved.connect ((label, url, transcription_url) => {
                 Address[] list = AddressBook.load (this.settings);
                 if (index >= list.length) {
                     return;
                 }
                 string old_url = list[index].url;
-                list[index] = Address () { label = label, url = url };
+                list[index] = Address () {
+                    label = label,
+                    url = url,
+                    transcription_url = transcription_url
+                };
                 AddressBook.save (this.settings, list);
                 // Keep the selection on this entry if it was the active one.
                 if (AddressBook.selected_url (this.settings) == old_url) {

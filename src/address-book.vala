@@ -19,10 +19,12 @@
  */
 
 namespace Linto {
-    // A saved stream address: a human-readable label and its URL.
+    // A saved stream address: a human-readable label, its URL, and an optional
+    // public transcription URL (empty when none).
     public struct Address {
         public string label;
         public string url;
+        public string transcription_url;
     }
 
     // Stores the list of saved addresses in the "addresses" GSettings key and
@@ -30,12 +32,19 @@ namespace Linto {
     namespace AddressBook {
         public Address[] load (GLib.Settings settings) {
             Address[] result = {};
+            // Optional transcription URLs live in a separate key (so the
+            // addresses key never has to change type on upgrade); join them onto
+            // each address by stream URL.
+            var transcription = transcription_map (settings);
             Variant arr = settings.get_value ("addresses");
             VariantIter it = arr.iterator ();
             string label;
             string url;
             while (it.next ("(ss)", out label, out url)) {
-                result += Address () { label = label, url = url };
+                string? t = transcription.lookup (url);
+                result += Address () {
+                    label = label, url = url, transcription_url = t ?? ""
+                };
             }
             // Migrate a single URL saved before the address list existed, so an
             // upgrade keeps the address the user had configured. Do this only
@@ -45,19 +54,41 @@ namespace Linto {
             if (result.length == 0 && settings.get_user_value ("addresses") == null) {
                 string legacy = settings.get_string ("srt-url").strip ();
                 if (legacy != "") {
-                    result += Address () { label = _("Default"), url = legacy };
+                    result += Address () {
+                        label = _("Default"), url = legacy, transcription_url = ""
+                    };
                     save (settings, result);
                 }
             }
             return result;
         }
 
+        // The stored (stream URL -> transcription URL) map.
+        private HashTable<string, string> transcription_map (
+            GLib.Settings settings) {
+            var map = new HashTable<string, string> (str_hash, str_equal);
+            Variant arr = settings.get_value ("transcription-urls");
+            VariantIter it = arr.iterator ();
+            string url;
+            string transcription;
+            while (it.next ("(ss)", out url, out transcription)) {
+                map.insert (url, transcription);
+            }
+            return map;
+        }
+
         public void save (GLib.Settings settings, Address[] entries) {
             var builder = new VariantBuilder (new VariantType ("a(ss)"));
+            var transcription =
+                new VariantBuilder (new VariantType ("a(ss)"));
             foreach (var e in entries) {
                 builder.add ("(ss)", e.label, e.url);
+                if (e.transcription_url != "") {
+                    transcription.add ("(ss)", e.url, e.transcription_url);
+                }
             }
             settings.set_value ("addresses", builder.end ());
+            settings.set_value ("transcription-urls", transcription.end ());
         }
 
         // The currently selected URL (mirrored to srt-url).
@@ -93,7 +124,11 @@ namespace Linto {
                     continue;
                 }
                 string label = unique_label (labels, inc.label.strip ());
-                list += Address () { label = label, url = url };
+                list += Address () {
+                    label = label,
+                    url = url,
+                    transcription_url = inc.transcription_url.strip ()
+                };
                 urls.add (url);
                 labels.add (label);
                 added++;
@@ -143,6 +178,21 @@ namespace Linto {
         // the label is empty, or an empty string when nothing is selected.
         public string active_label (GLib.Settings settings) {
             return label_for (settings, selected_url (settings));
+        }
+
+        // The public transcription URL saved for a stream URL, or "" when none.
+        public string transcription_url_for (GLib.Settings settings,
+            string url) {
+            if (url == "") {
+                return "";
+            }
+            string? t = transcription_map (settings).lookup (url);
+            return t ?? "";
+        }
+
+        // The public transcription URL of the active address, or "" when none.
+        public string active_transcription_url (GLib.Settings settings) {
+            return transcription_url_for (settings, selected_url (settings));
         }
     }
 }

@@ -1,5 +1,5 @@
 project('gnome-linto', ['vala', 'c'],
-  version: '1.0.11',
+  version: '1.0.12',
   license: 'AGPL-3.0-or-later',
   meson_version: '>= 1.0.0',
   default_options: [

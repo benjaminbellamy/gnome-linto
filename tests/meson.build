@@ -15,3 +15,17 @@ level_meter_test = executable('level-meter-test',
   c_args: test_c_args,
 )
 test('level-meter', level_meter_test)
+
+qr_code_test = executable('qr-code-test',
+  ['qr-code-test.vala', qr_code_vala],
+  dependencies: [gio_dep],
+  c_args: test_c_args,
+)
+test('qr-code', qr_code_test)
+
+csv_parser_test = executable('csv-parser-test',
+  ['csv-parser-test.vala', csv_parser_vala, stream_url_vala],
+  dependencies: [gio_dep],
+  c_args: test_c_args,
+)
+test('csv-parser', csv_parser_test)

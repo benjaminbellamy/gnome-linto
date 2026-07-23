@@ -21,6 +21,8 @@ gnome_linto_sources = [
   'audio-monitor.vala',
   'streamer.vala',
   'vad.vala',
+  'qr-code.vala',
+  'qr-dialog.vala',
 ]
 
 gnome_linto_deps = [
@@ -30,6 +32,8 @@ gnome_linto_deps = [
   gst_dep,
   gst_app_dep,
   soup_dep,
+  # Cairo is already in the runtime via GTK; used to draw the QR code.
+  dependency('cairo'),
   m_dep,
   config_dep,
 ]
@@ -51,3 +55,5 @@ executable('gnome-linto',
 # Pure-logic sources exposed for unit testing.
 stream_url_vala = files('stream-url.vala')
 level_meter_vala = files('level-meter.vala')
+qr_code_vala = files('qr-code.vala')
+csv_parser_vala = files('csv-parser.vala')

@@ -38,7 +38,7 @@
                 <child>
                   <object class="AdwPreferencesGroup">
                     <property name="title" translatable="yes">Columns</property>
-                    <property name="description" translatable="yes">Choose which column holds the label and which holds the address. Other columns are ignored.</property>
+                    <property name="description" translatable="yes">Choose which column holds the label, which holds the address, and optionally which holds the public transcription URL. Other columns are ignored.</property>
                     <child>
                       <object class="AdwComboRow" id="label_combo">
                         <property name="title" translatable="yes">Label column</property>
@@ -47,6 +47,12 @@
                     <child>
                       <object class="AdwComboRow" id="address_combo">
                         <property name="title" translatable="yes">Address column</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwComboRow" id="transcription_combo">
+                        <property name="title" translatable="yes">Transcription URL column</property>
+                        <property name="subtitle" translatable="yes">Optional</property>
                       </object>
                     </child>
                   </object>
