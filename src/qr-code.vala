@@ -400,59 +400,48 @@ namespace Linto {
 
         // ---- Mask penalty scoring (the four standard rules) ------------------
 
+        // Rules 1 and 3 summed along one direction: every row when horizontal,
+        // every column otherwise.
+        private int scan_lines (bool horizontal) {
+            int n = this.size;
+            int result = 0;
+            for (int line = 0; line < n; line++) {
+                bool run_color = false;
+                int run_len = 0;
+                int[] history = new int[7];
+                for (int pos = 0; pos < n; pos++) {
+                    bool m = horizontal
+                        ? this.mod[pos, line]
+                        : this.mod[line, pos];
+                    if (m == run_color) {
+                        run_len++;
+                        if (run_len == 5) {
+                            result += 3;
+                        } else if (run_len > 5) {
+                            result += 1;
+                        }
+                    } else {
+                        this.finder_add_history (run_len, history);
+                        if (!run_color) {
+                            result += this.finder_count (history) * 40;
+                        }
+                        run_color = m;
+                        run_len = 1;
+                    }
+                }
+                result += this.finder_terminate (run_color, run_len, history)
+                    * 40;
+            }
+            return result;
+        }
+
         private int penalty () {
             int n = this.size;
             int result = 0;
 
             // Rules 1 and 3, along rows then columns.
-            for (int y = 0; y < n; y++) {
-                bool run_color = false;
-                int run_len = 0;
-                int[] history = new int[7];
-                for (int x = 0; x < n; x++) {
-                    if (this.mod[x, y] == run_color) {
-                        run_len++;
-                        if (run_len == 5) {
-                            result += 3;
-                        } else if (run_len > 5) {
-                            result += 1;
-                        }
-                    } else {
-                        this.finder_add_history (run_len, history);
-                        if (!run_color) {
-                            result += this.finder_count (history) * 40;
-                        }
-                        run_color = this.mod[x, y];
-                        run_len = 1;
-                    }
-                }
-                result += this.finder_terminate (run_color, run_len, history)
-                    * 40;
-            }
-            for (int x = 0; x < n; x++) {
-                bool run_color = false;
-                int run_len = 0;
-                int[] history = new int[7];
-                for (int y = 0; y < n; y++) {
-                    if (this.mod[x, y] == run_color) {
-                        run_len++;
-                        if (run_len == 5) {
-                            result += 3;
-                        } else if (run_len > 5) {
-                            result += 1;
-                        }
-                    } else {
-                        this.finder_add_history (run_len, history);
-                        if (!run_color) {
-                            result += this.finder_count (history) * 40;
-                        }
-                        run_color = this.mod[x, y];
-                        run_len = 1;
-                    }
-                }
-                result += this.finder_terminate (run_color, run_len, history)
-                    * 40;
-            }
+            result += this.scan_lines (true);
+            result += this.scan_lines (false);
 
             // Rule 2: 2x2 blocks of one color.
             for (int y = 0; y < n - 1; y++) {

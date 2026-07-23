@@ -93,47 +93,49 @@ namespace Linto {
             });
         }
 
+        // Returns null when the value is valid for its field, else the reason.
+        private delegate string? Validator (string value);
+
         // Enables each paste button only when the clipboard holds a value valid
         // for its field, and otherwise explains in the tooltip why it cannot be
         // pasted.
         private void apply_clipboard_state (string? text) {
             string trimmed = (text ?? "").strip ();
+            this.clipboard_candidate = this.paste_state (this.paste_button,
+                trimmed, StreamUrl.validate,
+                _("Paste the address from the clipboard"));
+            this.transcription_candidate = this.paste_state (
+                this.transcription_paste_button, trimmed, transcription_error,
+                _("Paste the transcription URL from the clipboard"));
+        }
 
-            // Stream address field: SRT or RTMP.
-            this.clipboard_candidate = null;
+        // Sets a paste button's sensitivity and tooltip for the clipboard text,
+        // and returns the value to paste (null when it cannot be pasted).
+        private string? paste_state (Gtk.Button button, string trimmed,
+            Validator validate, string ok_tooltip) {
             if (trimmed == "") {
-                this.paste_button.sensitive = false;
-                this.paste_button.tooltip_text =
-                    _("The clipboard has no text to paste.");
-            } else {
-                string? error = StreamUrl.validate (trimmed);
-                if (error != null) {
-                    this.paste_button.sensitive = false;
-                    this.paste_button.tooltip_text = error;
-                } else {
-                    this.clipboard_candidate = trimmed;
-                    this.paste_button.sensitive = true;
-                    this.paste_button.tooltip_text =
-                        _("Paste the address from the clipboard");
-                }
+                button.sensitive = false;
+                button.tooltip_text = _("The clipboard has no text to paste.");
+                return null;
             }
+            string? error = validate (trimmed);
+            if (error != null) {
+                button.sensitive = false;
+                button.tooltip_text = error;
+                return null;
+            }
+            button.sensitive = true;
+            button.tooltip_text = ok_tooltip;
+            return trimmed;
+        }
 
-            // Transcription URL field: a web (http/https) URL.
-            this.transcription_candidate = null;
-            if (trimmed == "") {
-                this.transcription_paste_button.sensitive = false;
-                this.transcription_paste_button.tooltip_text =
-                    _("The clipboard has no text to paste.");
-            } else if (!is_web_url (trimmed)) {
-                this.transcription_paste_button.sensitive = false;
-                this.transcription_paste_button.tooltip_text =
-                    _("The clipboard does not hold an http:// or https:// URL.");
-            } else {
-                this.transcription_candidate = trimmed;
-                this.transcription_paste_button.sensitive = true;
-                this.transcription_paste_button.tooltip_text =
-                    _("Paste the transcription URL from the clipboard");
-            }
+        // Null when the value is an acceptable (optional) transcription URL,
+        // else the reason. The one definition of the field's validity.
+        private static string? transcription_error (string value) {
+            return StreamUrl.is_web_url (value)
+                ? null
+                : _("The transcription URL must start with http:// or "
+                    + "https://.");
         }
 
         [GtkCallback]
@@ -168,19 +170,14 @@ namespace Linto {
             }
             // The transcription URL is optional; when set it must be a web URL.
             string transcription = this.transcription_url_row.text.strip ();
-            if (transcription != "" && !is_web_url (transcription)) {
-                this.toast_overlay.add_toast (new Adw.Toast (
-                    _("The transcription URL must start with http:// or "
-                    + "https://.")));
+            string? transcription_err = transcription_error (transcription);
+            if (transcription != "" && transcription_err != null) {
+                this.toast_overlay.add_toast (
+                    new Adw.Toast (transcription_err));
                 return;
             }
             this.saved (this.label_row.text.strip (), url, transcription);
             this.close ();
-        }
-
-        private static bool is_web_url (string value) {
-            return value.has_prefix ("http://")
-                || value.has_prefix ("https://");
         }
     }
 }

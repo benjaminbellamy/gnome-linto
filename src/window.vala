@@ -163,6 +163,10 @@ namespace Linto {
             });
             this.settings.changed["srt-url"].connect (this.update_address_row);
             this.settings.changed["addresses"].connect (this.update_address_row);
+            // Switching address while auto-paused on silence ends the
+            // auto-pause and leaves a normal manual pause: no automatic resume,
+            // the user starts the new address by hand.
+            this.settings.changed["srt-url"].connect (this.cancel_auto_pause);
 
             this.audio_monitor = new AudioMonitor ();
             this.audio_monitor.voice_returned.connect (this.on_voice_returned);
@@ -474,27 +478,17 @@ namespace Linto {
                 AddressBook.active_transcription_url (this.settings) != "";
         }
 
+        private delegate void UrlAction (string url);
+
         // The three actions behind the transcription menu on the address row.
         // Each reads the active transcription URL when invoked, so it always
         // acts on the currently selected address.
         private void install_transcription_actions () {
-            var copy = new SimpleAction ("transcription-copy", null);
-            copy.activate.connect (() => {
-                string url = AddressBook.active_transcription_url (this.settings);
-                if (url == "") {
-                    return;
-                }
+            this.add_url_action ("transcription-copy", (url) => {
                 this.get_clipboard ().set_text (url);
                 this.toast (_("Transcription URL copied to clipboard"));
             });
-            this.add_action (copy);
-
-            var qr = new SimpleAction ("transcription-qr", null);
-            qr.activate.connect (() => {
-                string url = AddressBook.active_transcription_url (this.settings);
-                if (url == "") {
-                    return;
-                }
+            this.add_url_action ("transcription-qr", (url) => {
                 QrCode? code = QrCode.encode (url);
                 if (code == null) {
                     this.toast (
@@ -503,14 +497,7 @@ namespace Linto {
                 }
                 new QrDialog (this, code, url).present ();
             });
-            this.add_action (qr);
-
-            var open = new SimpleAction ("transcription-open", null);
-            open.activate.connect (() => {
-                string url = AddressBook.active_transcription_url (this.settings);
-                if (url == "") {
-                    return;
-                }
+            this.add_url_action ("transcription-open", (url) => {
                 var launcher = new Gtk.UriLauncher (url);
                 launcher.launch.begin (this, null, (obj, res) => {
                     try {
@@ -522,7 +509,20 @@ namespace Linto {
                     }
                 });
             });
-            this.add_action (open);
+        }
+
+        // Registers a window action that runs only when a transcription URL is
+        // set, passing it to the handler (so each handler is just its own body).
+        private void add_url_action (string name, owned UrlAction act) {
+            var action = new SimpleAction (name, null);
+            action.activate.connect (() => {
+                string url =
+                    AddressBook.active_transcription_url (this.settings);
+                if (url != "") {
+                    act (url);
+                }
+            });
+            this.add_action (action);
         }
 
         // Begins the global cool-down and refreshes the start button so it
@@ -895,10 +895,9 @@ namespace Linto {
             if (!this.auto_paused) {
                 return;
             }
-            // Resume the currently selected address, not the one that was
-            // paused: the user may have picked a different address while
-            // auto-paused (the streamer is idle then, so that is a plain
-            // selection, mirrored to srt-url), and the switch must take effect.
+            // Resume the currently selected address (switching address while
+            // auto-paused cancels the auto-pause, so this is always the address
+            // that was paused).
             string url = this.settings.get_string ("srt-url").strip ();
             if (StreamUrl.validate (url) != null
                 || this.selected_device_id () == null) {
@@ -917,6 +916,25 @@ namespace Linto {
             } else {
                 this.begin_stream (url);
             }
+        }
+
+        // Ends an auto-pause (silence) and returns to a normal manual pause: no
+        // automatic resume, the user starts again by hand. Used when the user
+        // switches address while auto-paused (a plain selection, since the
+        // streamer is idle then, so it is not a live switch).
+        private void cancel_auto_pause () {
+            if (!this.auto_paused) {
+                return;
+            }
+            this.auto_paused = false;
+            this.audio_monitor.arm_resume (false);
+            // Drop any resume that voice-return queued for the old address
+            // while the cool-down was still running, and drop any appsrc it
+            // attached at the speech onset, so the next start gets a fresh one
+            // instead of reusing that buffered source.
+            this.pending_start_url = "";
+            this.audio_monitor.detach_stream_source ();
+            this.update_stream_button ();
         }
 
         // Reads the aggregate CPU counters from /proc/stat (system-wide, so it

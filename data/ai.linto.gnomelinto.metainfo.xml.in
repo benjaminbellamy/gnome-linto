@@ -35,6 +35,14 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.13" date="2026-07-23">
+      <description>
+        <p>Switching stream address while paused on silence now ends the
+          auto-pause and leaves a normal manual pause: it no longer resumes on
+          its own when sound returns, and starting the new address uses a fresh
+          audio source. Also includes internal code cleanups.</p>
+      </description>
+    </release>
     <release version="1.0.12" date="2026-07-23">
       <description>
         <p>Each saved stream can now carry an optional public transcription URL.

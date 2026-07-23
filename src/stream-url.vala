@@ -72,6 +72,14 @@ namespace Linto {
             return null;
         }
 
+        // True when the URL looks like a public web URL (http or https). The
+        // one definition of an acceptable transcription URL, used by the CSV
+        // column heuristic and the address editor's field and paste button.
+        public bool is_web_url (string url) {
+            string u = url.strip ().down ();
+            return u.has_prefix ("http://") || u.has_prefix ("https://");
+        }
+
         // Returns true when the URL's query string already contains the given
         // parameter (matched case-insensitively). Used to leave a URL-provided
         // value untouched when applying app defaults.

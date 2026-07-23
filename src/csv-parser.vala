@@ -140,8 +140,7 @@ namespace Linto {
 
         // True when the value looks like a public web (transcription) URL.
         public bool looks_like_https (string value) {
-            string v = value.strip ();
-            return v.has_prefix ("https://") || v.has_prefix ("http://");
+            return StreamUrl.is_web_url (value);
         }
 
         // True when the first row looks like a header: it has fields and none
