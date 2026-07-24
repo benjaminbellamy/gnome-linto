@@ -35,6 +35,15 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.16" date="2026-07-24">
+      <description>
+        <p>The share menu now has a Stream from a terminal item: an optional
+          alternative to streaming from the app, it shows the gst-launch-1.0
+          pipeline for the current stream and the command to install the
+          GStreamer packages it needs, tailored to your Linux distribution, each
+          with a copy button.</p>
+      </description>
+    </release>
     <release version="1.0.15" date="2026-07-24">
       <description>
         <p>Adds a Copy gst-launch command item to the share menu on the address

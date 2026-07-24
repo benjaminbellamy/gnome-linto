@@ -25,8 +25,8 @@
   <menu id="transcription_menu">
     <section>
       <item>
-        <attribute name="label" translatable="yes">Copy _gst-launch command</attribute>
-        <attribute name="action">win.copy-gst-command</attribute>
+        <attribute name="label" translatable="yes">Stream from a _terminal…</attribute>
+        <attribute name="action">win.stream-terminal</attribute>
       </item>
     </section>
     <section>

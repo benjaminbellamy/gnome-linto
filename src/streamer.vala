@@ -404,6 +404,73 @@ namespace Linto {
             }
         }
 
+        // A one-liner installing every GStreamer package the copied gst-launch
+        // command needs on the host (the flatpak bundles these itself): the
+        // tools, pipewiresrc, the base/good/bad/ugly plugins, and gst-libav
+        // (avenc_ac3 / avenc_aac). The package manager and names are picked from
+        // the host distribution (flatpak exposes it at /run/host/os-release);
+        // distro_label names it for the UI. Package names still vary between
+        // distributions, which the UI notes.
+        public static string host_dependencies_command (out string distro_label) {
+            string family = read_os_family ();
+            if ("debian" in family || "ubuntu" in family) {
+                distro_label = "Debian / Ubuntu (apt)";
+                return "sudo apt update && sudo apt install -y "
+                    + "gstreamer1.0-tools gstreamer1.0-plugins-base "
+                    + "gstreamer1.0-plugins-good gstreamer1.0-plugins-bad "
+                    + "gstreamer1.0-plugins-ugly gstreamer1.0-libav "
+                    + "gstreamer1.0-pipewire";
+            }
+            if ("fedora" in family || "rhel" in family) {
+                distro_label = "Fedora (dnf)";
+                return "sudo dnf install -y gstreamer1 gstreamer1-plugins-base "
+                    + "gstreamer1-plugins-good gstreamer1-plugins-bad-free "
+                    + "gstreamer1-plugins-ugly-free gstreamer1-libav "
+                    + "gstreamer1-plugin-pipewire";
+            }
+            if ("arch" in family) {
+                distro_label = "Arch (pacman)";
+                return "sudo pacman -S --needed gstreamer gst-plugins-base "
+                    + "gst-plugins-good gst-plugins-bad gst-plugins-ugly "
+                    + "gst-libav gst-plugin-pipewire";
+            }
+            if ("suse" in family) {
+                distro_label = "openSUSE (zypper)";
+                return "sudo zypper install gstreamer gstreamer-plugins-base "
+                    + "gstreamer-plugins-good gstreamer-plugins-bad "
+                    + "gstreamer-plugins-ugly gstreamer-plugins-libav";
+            }
+            distro_label = "Debian / Ubuntu (apt)";
+            return "sudo apt update && sudo apt install -y gstreamer1.0-tools "
+                + "gstreamer1.0-plugins-base gstreamer1.0-plugins-good "
+                + "gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly "
+                + "gstreamer1.0-libav gstreamer1.0-pipewire";
+        }
+
+        // The host distribution ID and ID_LIKE, lowercased and joined, from the
+        // os-release flatpak exposes at /run/host/os-release. "" when it cannot
+        // be read (the caller then falls back to a default).
+        private static string read_os_family () {
+            var sb = new StringBuilder ();
+            string contents;
+            try {
+                if (FileUtils.get_contents ("/run/host/os-release",
+                        out contents)) {
+                    foreach (string line in contents.split ("\n")) {
+                        if (line.has_prefix ("ID=")
+                            || line.has_prefix ("ID_LIKE=")) {
+                            int eq = line.index_of_char ('=');
+                            sb.append (line.substring (eq + 1)
+                                .replace ("\"", "").down ());
+                            sb.append_c (' ');
+                        }
+                    }
+                }
+            } catch (Error e) {
+            }
+            return sb.str;
+        }
+
         private void teardown_pipeline () {
             if (this.bus_watch_id != 0) {
                 Source.remove (this.bus_watch_id);

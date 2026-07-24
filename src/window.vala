@@ -511,25 +511,14 @@ namespace Linto {
 
         private delegate void UrlAction (string url);
 
-        // The actions behind the share menu on the address row. The gst-launch
-        // command works for any selected stream; the transcription actions read
+        // The actions behind the share menu on the address row. Streaming from a
+        // terminal works for any selected stream; the transcription actions read
         // the active transcription URL when invoked and are enabled only when
         // one is set (see update_address_row).
         private void install_transcription_actions () {
-            var gst = new SimpleAction ("copy-gst-command", null);
-            gst.activate.connect (() => {
-                string url = this.settings.get_string ("srt-url").strip ();
-                string command = Streamer.gst_launch_command (url,
-                    this.selected_device_id (),
-                    this.settings.get_int ("srt-latency"));
-                if (command == "") {
-                    this.toast (_("No gst-launch command for this address."));
-                    return;
-                }
-                this.get_clipboard ().set_text (command);
-                this.toast (_("gst-launch command copied to clipboard"));
-            });
-            this.add_action (gst);
+            var terminal = new SimpleAction ("stream-terminal", null);
+            terminal.activate.connect (this.show_terminal_dialog);
+            this.add_action (terminal);
 
             this.add_url_action ("transcription-copy", (url) => {
                 this.get_clipboard ().set_text (url);
@@ -570,6 +559,89 @@ namespace Linto {
                 }
             });
             this.add_action (action);
+        }
+
+        // Shows how to run the current stream from a terminal: an optional
+        // alternative to streaming from the app (which needs none of this). It
+        // presents the gst-launch pipeline and the GStreamer packages to install
+        // on the host, each with a copy button.
+        private void show_terminal_dialog () {
+            string url = this.settings.get_string ("srt-url").strip ();
+            string pipeline = Streamer.gst_launch_command (url,
+                this.selected_device_id (),
+                this.settings.get_int ("srt-latency"));
+            if (pipeline == "") {
+                this.toast (_("This address has no terminal command."));
+                return;
+            }
+            string distro;
+            string deps = Streamer.host_dependencies_command (out distro);
+
+            var overlay = new Adw.ToastOverlay ();
+            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 18) {
+                margin_top = 18, margin_bottom = 18,
+                margin_start = 18, margin_end = 18
+            };
+            box.append (new Gtk.Label (
+                _("You do not need this to stream: the app streams for you. As "
+                + "an optional alternative, you can run the same pipeline "
+                + "yourself in a terminal with gst-launch-1.0.")) {
+                wrap = true, xalign = 0
+            });
+            box.append (this.command_block (_("Pipeline"), pipeline, overlay));
+            box.append (this.command_block (
+                _("Install GStreamer on the host — %s").printf (distro),
+                deps, overlay));
+            box.append (new Gtk.Label (
+                _("Package names vary between distributions.")) {
+                wrap = true, xalign = 0
+            });
+            box.get_last_child ().add_css_class ("dim-label");
+
+            var view = new Adw.ToolbarView ();
+            view.add_top_bar (new Adw.HeaderBar ());
+            view.content = box;
+            overlay.child = view;
+            var dialog = new Adw.Dialog () {
+                title = _("Stream from a terminal"), content_width = 620
+            };
+            dialog.child = overlay;
+            dialog.present (this);
+        }
+
+        // A titled block showing one command in monospace inside a card, with a
+        // Copy button.
+        private Gtk.Widget command_block (string title, string command,
+            Adw.ToastOverlay overlay) {
+            var block = new Gtk.Box (Gtk.Orientation.VERTICAL, 6);
+            var heading = new Gtk.Label (title) { xalign = 0 };
+            heading.add_css_class ("heading");
+            block.append (heading);
+
+            var card = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            card.add_css_class ("card");
+            var label = new Gtk.Label (command) {
+                wrap = true, wrap_mode = Pango.WrapMode.WORD_CHAR,
+                xalign = 0, selectable = true, hexpand = true,
+                // Keep it out of the focus chain so it is not auto-selected when
+                // the window opens; mouse selection still works.
+                focusable = false,
+                margin_top = 10, margin_bottom = 10, margin_start = 12
+            };
+            label.add_css_class ("monospace");
+            var button = new Gtk.Button.from_icon_name ("edit-copy-symbolic") {
+                valign = Gtk.Align.CENTER, margin_end = 6,
+                tooltip_text = _("Copy")
+            };
+            button.add_css_class ("flat");
+            button.clicked.connect (() => {
+                this.get_clipboard ().set_text (command);
+                overlay.add_toast (new Adw.Toast (_("Copied to clipboard")));
+            });
+            card.append (label);
+            card.append (button);
+            block.append (card);
+            return block;
         }
 
         // Begins the global cool-down and refreshes the start button so it
