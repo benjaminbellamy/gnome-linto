@@ -105,7 +105,20 @@
                     <child>
                       <object class="AdwActionRow" id="level_row">
                         <property name="title" translatable="yes">Input level</property>
-                        <property name="subtitle" translatable="yes">Silent</property>
+                        <property name="subtitle" translatable="yes">No voice</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="level_value">
+                            <property name="label" translatable="yes">Silent</property>
+                            <property name="valign">center</property>
+                            <property name="halign">end</property>
+                            <property name="xalign">1</property>
+                            <property name="width-request">92</property>
+                            <style>
+                              <class name="dim-label"/>
+                              <class name="numeric"/>
+                            </style>
+                          </object>
+                        </child>
                         <child type="suffix">
                           <object class="GtkLevelBar" id="level_bar">
                             <property name="valign">center</property>
@@ -120,7 +133,19 @@
                     <child>
                       <object class="AdwActionRow" id="sent_row">
                         <property name="title" translatable="yes">Data rate</property>
-                        <property name="subtitle">0 B/s</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="sent_value">
+                            <property name="label">0 B/s</property>
+                            <property name="valign">center</property>
+                            <property name="halign">end</property>
+                            <property name="xalign">1</property>
+                            <property name="width-request">92</property>
+                            <style>
+                              <class name="dim-label"/>
+                              <class name="numeric"/>
+                            </style>
+                          </object>
+                        </child>
                         <child type="suffix">
                           <object class="GtkLevelBar" id="sent_bar">
                             <property name="valign">center</property>
@@ -135,7 +160,19 @@
                     <child>
                       <object class="AdwActionRow" id="cpu_row">
                         <property name="title" translatable="yes">CPU usage</property>
-                        <property name="subtitle">0%</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="cpu_value">
+                            <property name="label">0%</property>
+                            <property name="valign">center</property>
+                            <property name="halign">end</property>
+                            <property name="xalign">1</property>
+                            <property name="width-request">92</property>
+                            <style>
+                              <class name="dim-label"/>
+                              <class name="numeric"/>
+                            </style>
+                          </object>
+                        </child>
                         <child type="suffix">
                           <object class="GtkLevelBar" id="cpu_bar">
                             <property name="valign">center</property>

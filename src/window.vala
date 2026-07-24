@@ -71,10 +71,13 @@ namespace Linto {
         [GtkChild] private unowned Gtk.MenuButton transcription_button;
         [GtkChild] private unowned Adw.ComboRow device_row;
         [GtkChild] private unowned Adw.ActionRow level_row;
+        [GtkChild] private unowned Gtk.Label level_value;
         [GtkChild] private unowned Gtk.LevelBar level_bar;
         [GtkChild] private unowned Adw.ActionRow sent_row;
+        [GtkChild] private unowned Gtk.Label sent_value;
         [GtkChild] private unowned Gtk.LevelBar sent_bar;
         [GtkChild] private unowned Adw.ActionRow cpu_row;
+        [GtkChild] private unowned Gtk.Label cpu_value;
         [GtkChild] private unowned Gtk.LevelBar cpu_bar;
         [GtkChild] private unowned Gtk.Button stream_button;
         [GtkChild] private unowned Adw.ToastOverlay toast_overlay;
@@ -137,6 +140,7 @@ namespace Linto {
         // and the 4 Hz sent-rate tick skip the string formatting and the widget
         // relayout when the displayed value has not changed.
         private string last_level_text = "";
+        private string last_voice_text = "";
         private string last_sent_text = "";
 
         public ControlServer control_server;
@@ -170,19 +174,30 @@ namespace Linto {
 
             this.audio_monitor = new AudioMonitor ();
             this.audio_monitor.voice_returned.connect (this.on_voice_returned);
+            // Keep the voice level gate in sync with its settings.
+            this.update_voice_threshold ();
+            this.settings.changed["voice-threshold-auto"].connect (
+                this.update_voice_threshold);
+            this.settings.changed["voice-threshold"].connect (
+                this.update_voice_threshold);
             this.audio_monitor.level.connect ((peak, db) => {
                 this.level_bar.value = peak;
-                // Peak in dBFS: 0 is full scale (clipping), negative is
-                // headroom; below the noise floor it just reads as silent.
+                // Peak in dBFS (right-aligned value): 0 is full scale
+                // (clipping), negative is headroom; below the noise floor it
+                // just reads as silent.
                 string level_text = (db <= -90.0)
                     ? _("Silent")
                     : _("%.1f dBFS").printf (db);
-                // Real-time voice activity, so the user can see when the
-                // detector considers there is no voice. While streaming, show a
-                // live countdown to the silence auto-pause.
-                string text;
+                if (level_text != this.last_level_text) {
+                    this.last_level_text = level_text;
+                    this.level_value.label = level_text;
+                }
+                // Real-time voice activity (left-aligned subtitle), so the user
+                // can see when the detector considers there is no voice. While
+                // streaming, show a live countdown to the silence auto-pause.
+                string voice_text;
                 if (this.audio_monitor.voice_active ()) {
-                    text = _("%s (voice)").printf (level_text);
+                    voice_text = _("Voice");
                 } else if (this.streamer.state == StreamState.STREAMING
                            && !this.auto_paused) {
                     int remaining = this.settings.get_int ("silence-timeout")
@@ -190,14 +205,14 @@ namespace Linto {
                     if (remaining < 0) {
                         remaining = 0;
                     }
-                    text = _("%s (no voice, pausing in %d s)").printf (
-                        level_text, remaining);
+                    voice_text = _("No voice, pausing in %d s").printf (
+                        remaining);
                 } else {
-                    text = _("%s (no voice)").printf (level_text);
+                    voice_text = _("No voice");
                 }
-                if (text != this.last_level_text) {
-                    this.last_level_text = text;
-                    this.level_row.subtitle = text;
+                if (voice_text != this.last_voice_text) {
+                    this.last_voice_text = voice_text;
+                    this.level_row.subtitle = voice_text;
                 }
             });
 
@@ -816,7 +831,7 @@ namespace Linto {
         private void reset_sent_meter () {
             this.sent_bar.value = 0;
             this.last_sent_text = _("0 B/s");
-            this.sent_row.subtitle = this.last_sent_text;
+            this.sent_value.label = this.last_sent_text;
         }
 
         // Reads how many bytes have been handed to the network sink since the
@@ -840,7 +855,7 @@ namespace Linto {
             string text = _("%s B/s").printf (((uint64) rate).to_string ());
             if (text != this.last_sent_text) {
                 this.last_sent_text = text;
-                this.sent_row.subtitle = text;
+                this.sent_value.label = text;
             }
             return Source.CONTINUE;
         }
@@ -850,7 +865,7 @@ namespace Linto {
         private bool on_cpu_tick () {
             uint64 total, idle;
             if (!this.read_cpu (out total, out idle)) {
-                this.cpu_row.subtitle = _("Unavailable");
+                this.cpu_value.label = _("Unavailable");
                 return Source.CONTINUE;
             }
             uint64 total_delta = total - this.cpu_last_total;
@@ -863,7 +878,7 @@ namespace Linto {
                 : 0.0;
             usage = usage.clamp (0.0, 1.0);
             this.cpu_bar.value = usage;
-            this.cpu_row.subtitle = _("%d%%").printf ((int) (usage * 100.0 + 0.5));
+            this.cpu_value.label = _("%d%%").printf ((int) (usage * 100.0 + 0.5));
 
             this.check_silence_timeout ();
             return Source.CONTINUE;
@@ -872,6 +887,15 @@ namespace Linto {
         // Pauses the stream when it has been silent (no detected voice) for the
         // configured timeout. It resumes on its own when voice returns (see
         // on_voice_returned). Only an actively streaming session auto-pauses.
+        // Pushes the voice level gate settings (automatic on/off and the manual
+        // dBFS threshold) to the audio monitor. Called at startup and whenever
+        // either setting changes.
+        private void update_voice_threshold () {
+            this.audio_monitor.set_voice_threshold (
+                this.settings.get_boolean ("voice-threshold-auto"),
+                this.settings.get_int ("voice-threshold"));
+        }
+
         private void check_silence_timeout () {
             if (this.auto_paused
                 || this.streamer.state != StreamState.STREAMING) {

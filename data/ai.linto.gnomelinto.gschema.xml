@@ -84,5 +84,24 @@
         not count as speech.
       </description>
     </key>
+    <key name="voice-threshold-auto" type="b">
+      <default>true</default>
+      <summary>Automatic voice level threshold</summary>
+      <description>
+        When on, the level below which audio counts as silence is derived
+        automatically from the recent loudest audio (about 20 dB below it).
+        When off, the manual voice-threshold value is used.
+      </description>
+    </key>
+    <key name="voice-threshold" type="i">
+      <default>-50</default>
+      <range min="-90" max="0"/>
+      <summary>Voice level threshold</summary>
+      <description>
+        Audio below this level (in dBFS) counts as silence and does not keep the
+        stream from auto-pausing. Used only when the automatic threshold is off.
+        Set it above the background noise shown on the input level meter.
+      </description>
+    </key>
   </schema>
 </schemalist>

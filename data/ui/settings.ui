@@ -14,6 +14,12 @@
     <property name="step-increment">5</property>
     <property name="page-increment">30</property>
   </object>
+  <object class="GtkAdjustment" id="voice_threshold_adjustment">
+    <property name="lower">-90</property>
+    <property name="upper">0</property>
+    <property name="step-increment">1</property>
+    <property name="page-increment">5</property>
+  </object>
   <object class="GtkAdjustment" id="port_adjustment">
     <property name="lower">1</property>
     <property name="upper">65535</property>
@@ -52,6 +58,19 @@
                       <object class="AdwSpinRow" id="silence_row">
                         <property name="title" translatable="yes">Pause after silence (s)</property>
                         <property name="adjustment">silence_adjustment</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwSwitchRow" id="voice_threshold_auto_row">
+                        <property name="title" translatable="yes">Automatic voice threshold</property>
+                        <property name="subtitle" translatable="yes">Learn the silence level from the recent loudest audio.</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwSpinRow" id="voice_threshold_row">
+                        <property name="title" translatable="yes">Voice level threshold (dBFS)</property>
+                        <property name="subtitle" translatable="yes">Audio below this level counts as silence. Set it above the input level meter's background noise.</property>
+                        <property name="adjustment">voice_threshold_adjustment</property>
                       </object>
                     </child>
                   </object>

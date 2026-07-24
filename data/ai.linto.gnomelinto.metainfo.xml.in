@@ -35,6 +35,17 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.14" date="2026-07-24">
+      <description>
+        <p>Reworks the voice detection behind the silence auto-pause. It now
+          scales to your microphone and background noise (tracking the quiet
+          and speaking levels and normalizing between them), so speech is told
+          apart from ambient noise more reliably, and a manual voice level
+          threshold is available in Settings. The input level, data rate, and
+          CPU usage rows now show their value aligned on the right, next to the
+          bar.</p>
+      </description>
+    </release>
     <release version="1.0.13" date="2026-07-23">
       <description>
         <p>Switching stream address while paused on silence now ends the

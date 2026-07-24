@@ -73,6 +73,11 @@ namespace Linto {
         // The latest voice-detected state, mirrored for the main thread so the
         // input level readout can show whether voice is present right now.
         private bool voice_state = false;
+        // The voice level gate: an automatic (envelope-derived) threshold, or
+        // the manual one as a linear mean-square value (converted from dBFS).
+        // Set from the main thread, read on the tap thread.
+        private bool voice_threshold_auto = true;
+        private double voice_energy_threshold = 0.0;
 
         construct {
             this.last_voice_mono_us = GLib.get_monotonic_time ();
@@ -320,8 +325,13 @@ namespace Linto {
             }
             buffer.unmap (info);
 
+            this.voice_lock.lock ();
+            bool automatic = this.voice_threshold_auto;
+            double threshold = this.voice_energy_threshold;
+            this.voice_lock.unlock ();
+
             bool was = this.vad.speaking;
-            bool now = this.vad.push (samples);
+            bool now = this.vad.push (samples, threshold, automatic);
 
             this.voice_lock.lock ();
             this.voice_state = now;
@@ -380,6 +390,18 @@ namespace Linto {
         public void arm_resume (bool armed) {
             this.voice_lock.lock ();
             this.resume_armed = armed;
+            this.voice_lock.unlock ();
+        }
+
+        // Sets the voice level gate below which audio is treated as silence,
+        // either automatic (envelope-derived) or a manual dBFS value. The dBFS
+        // is converted once to a linear mean-square threshold matching the VAD's
+        // energy units, so the tap thread never has to compute a logarithm.
+        public void set_voice_threshold (bool automatic, int dbfs) {
+            double amplitude = 32767.0 * Math.pow (10.0, (double) dbfs / 20.0);
+            this.voice_lock.lock ();
+            this.voice_threshold_auto = automatic;
+            this.voice_energy_threshold = amplitude * amplitude;
             this.voice_lock.unlock ();
         }
 

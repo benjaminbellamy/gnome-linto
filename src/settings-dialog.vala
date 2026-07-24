@@ -27,6 +27,9 @@ namespace Linto {
         [GtkChild] private unowned Adw.SpinRow srt_latency_row;
         [GtkChild] private unowned Gtk.Adjustment srt_latency_adjustment;
         [GtkChild] private unowned Gtk.Adjustment silence_adjustment;
+        [GtkChild] private unowned Adw.SwitchRow voice_threshold_auto_row;
+        [GtkChild] private unowned Adw.SpinRow voice_threshold_row;
+        [GtkChild] private unowned Gtk.Adjustment voice_threshold_adjustment;
         [GtkChild] private unowned Adw.SwitchRow enable_row;
         [GtkChild] private unowned Gtk.Adjustment port_adjustment;
         [GtkChild] private unowned Adw.ActionRow password_row;
@@ -52,6 +55,17 @@ namespace Linto {
 
             this.bind_int_adjustment (this.srt_latency_adjustment, "srt-latency");
             this.bind_int_adjustment (this.silence_adjustment, "silence-timeout");
+
+            // Voice level gate: an automatic switch, plus a manual dBFS row that
+            // is only editable while automatic is off.
+            this.settings.bind ("voice-threshold-auto",
+                this.voice_threshold_auto_row, "active",
+                SettingsBindFlags.DEFAULT);
+            this.bind_int_adjustment (this.voice_threshold_adjustment,
+                "voice-threshold");
+            this.settings.bind ("voice-threshold-auto",
+                this.voice_threshold_row, "sensitive",
+                SettingsBindFlags.GET | SettingsBindFlags.INVERT_BOOLEAN);
 
             // Latency is an SRT-only knob and does not apply to RTMP, so the row
             // is shown only when the active address is an SRT URL.

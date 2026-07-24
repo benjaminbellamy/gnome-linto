@@ -29,3 +29,10 @@ csv_parser_test = executable('csv-parser-test',
   c_args: test_c_args,
 )
 test('csv-parser', csv_parser_test)
+
+vad_test = executable('vad-test',
+  ['vad-test.vala', vad_vala],
+  dependencies: [gio_dep, m_dep],
+  c_args: test_c_args,
+)
+test('vad', vad_test)
