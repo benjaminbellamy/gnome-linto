@@ -25,16 +25,25 @@
   <menu id="transcription_menu">
     <section>
       <item>
+        <attribute name="label" translatable="yes">Copy _gst-launch command</attribute>
+        <attribute name="action">win.copy-gst-command</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
         <attribute name="label" translatable="yes">_Copy transcription URL to clipboard</attribute>
         <attribute name="action">win.transcription-copy</attribute>
+        <attribute name="hidden-when">action-disabled</attribute>
       </item>
       <item>
         <attribute name="label" translatable="yes">Show transcription _QR-code</attribute>
         <attribute name="action">win.transcription-qr</attribute>
+        <attribute name="hidden-when">action-disabled</attribute>
       </item>
       <item>
         <attribute name="label" translatable="yes">_Open transcription</attribute>
         <attribute name="action">win.transcription-open</attribute>
+        <attribute name="hidden-when">action-disabled</attribute>
       </item>
     </section>
   </menu>
@@ -83,7 +92,7 @@
                             <property name="visible">false</property>
                             <property name="valign">center</property>
                             <property name="icon-name">emblem-shared-symbolic</property>
-                            <property name="tooltip-text" translatable="yes">Public transcription</property>
+                            <property name="tooltip-text" translatable="yes">Share stream</property>
                             <property name="menu-model">transcription_menu</property>
                             <style>
                               <class name="flat"/>

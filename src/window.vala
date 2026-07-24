@@ -489,16 +489,48 @@ namespace Linto {
             this.address_row.subtitle = label != ""
                 ? Markup.escape_text (label)
                 : _("No address");
-            this.transcription_button.visible =
+            // The share menu is available for any selected stream (it can copy
+            // the gst-launch command); the transcription items inside it are
+            // enabled only when the address has a public transcription URL, and
+            // the menu hides them when disabled.
+            string url = this.settings.get_string ("srt-url").strip ();
+            this.transcription_button.visible = url != "";
+            bool has_transcription =
                 AddressBook.active_transcription_url (this.settings) != "";
+            this.set_action_enabled ("transcription-copy", has_transcription);
+            this.set_action_enabled ("transcription-qr", has_transcription);
+            this.set_action_enabled ("transcription-open", has_transcription);
+        }
+
+        private void set_action_enabled (string name, bool enabled) {
+            var action = this.lookup_action (name) as SimpleAction;
+            if (action != null) {
+                action.set_enabled (enabled);
+            }
         }
 
         private delegate void UrlAction (string url);
 
-        // The three actions behind the transcription menu on the address row.
-        // Each reads the active transcription URL when invoked, so it always
-        // acts on the currently selected address.
+        // The actions behind the share menu on the address row. The gst-launch
+        // command works for any selected stream; the transcription actions read
+        // the active transcription URL when invoked and are enabled only when
+        // one is set (see update_address_row).
         private void install_transcription_actions () {
+            var gst = new SimpleAction ("copy-gst-command", null);
+            gst.activate.connect (() => {
+                string url = this.settings.get_string ("srt-url").strip ();
+                string command = Streamer.gst_launch_command (url,
+                    this.selected_device_id (),
+                    this.settings.get_int ("srt-latency"));
+                if (command == "") {
+                    this.toast (_("No gst-launch command for this address."));
+                    return;
+                }
+                this.get_clipboard ().set_text (command);
+                this.toast (_("gst-launch command copied to clipboard"));
+            });
+            this.add_action (gst);
+
             this.add_url_action ("transcription-copy", (url) => {
                 this.get_clipboard ().set_text (url);
                 this.toast (_("Transcription URL copied to clipboard"));

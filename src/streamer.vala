@@ -370,6 +370,40 @@ namespace Linto {
             }
         }
 
+        // Builds a gst-launch-1.0 command line that reproduces the current
+        // stream straight from PipeWire, for the user to copy and run or share.
+        // It mirrors the encoder, muxer and sink used in build_output, and
+        // targets the selected input node. Returns "" for an unsupported
+        // protocol.
+        public static string gst_launch_command (string url, string? node_name,
+            int srt_latency_ms) {
+            string src = "pipewiresrc";
+            if (node_name != null && node_name != "") {
+                src += " target-object=\"%s\"".printf (node_name);
+            }
+            string caps = "audio/x-raw,rate=16000,channels=1";
+            switch (StreamUrl.protocol (url)) {
+                case StreamProtocol.SRT:
+                    string sink = "srtsink uri='%s'".printf (url);
+                    // A latency in the URL wins, matching the streamer.
+                    if (!StreamUrl.has_query_param (url, "latency")) {
+                        sink += " latency=%d".printf (srt_latency_ms);
+                    }
+                    // The original reference pipeline (AC-3, no caps filter),
+                    // which Benjamin wants copied rather than the app's current
+                    // Opus encode.
+                    return ("gst-launch-1.0 %s ! audioconvert ! audioresample"
+                        + " ! avenc_ac3 ! mpegtsmux ! rtpmp2tpay ! %s")
+                        .printf (src, sink);
+                case StreamProtocol.RTMP:
+                    return ("gst-launch-1.0 %s ! audioconvert ! audioresample"
+                        + " ! %s ! avenc_aac ! aacparse ! flvmux streamable=true"
+                        + " ! rtmp2sink location='%s'").printf (src, caps, url);
+                default:
+                    return "";
+            }
+        }
+
         private void teardown_pipeline () {
             if (this.bus_watch_id != 0) {
                 Source.remove (this.bus_watch_id);

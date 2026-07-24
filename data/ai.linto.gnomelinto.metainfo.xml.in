@@ -35,6 +35,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.15" date="2026-07-24">
+      <description>
+        <p>Adds a Copy gst-launch command item to the share menu on the address
+          row: it copies a ready-to-run gst-launch-1.0 pipeline that reproduces
+          the current stream from your microphone, so you can run or share it
+          from a terminal. The share menu now appears for any selected address,
+          with the transcription actions shown when the address has a public
+          transcription URL.</p>
+      </description>
+    </release>
     <release version="1.0.14" date="2026-07-24">
       <description>
         <p>Reworks the voice detection behind the silence auto-pause. It now
